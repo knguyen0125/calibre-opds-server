@@ -1,23 +1,23 @@
 import Bun, { XML } from "bun";
-import { Library } from "./src/opds.ts";
+import { CalibreLibrary } from "./src/opds/CalibreLibrary.ts";
 import { Elysia, file, t } from "elysia";
 import { requireAuth } from "./src/auth.ts";
 
 const main = async () => {
-  const library = new Library(process.env.CALIBRE_LIBRARY_DIR!);
+  const library = new CalibreLibrary(process.env.CALIBRE_LIBRARY_DIR!);
 
   const app = new Elysia()
     .onBeforeHandle(requireAuth)
-    .get("/opds", () => {
-      return new Response(library.getRootFeed().toXML(), {
-        headers: {
-          "Content-Type": "application/atom+xml",
-        },
-      });
+    .get("/opds", ({ set }) => {
+      set.headers["content-type"] = "application/atom+xml";
+
+      return library.getRootFeed().toXML();
     })
     .get(
       "/opds/authors",
-      ({ query }) => {
+      ({ query, set }) => {
+        set.headers["content-type"] = "application/atom+xml";
+
         return library.getAuthorListFeed({ page: query.page }).toXML();
       },
       {
@@ -28,7 +28,8 @@ const main = async () => {
     )
     .get(
       "/opds/authors/:id",
-      ({ params, query }) => {
+      ({ params, query, set }) => {
+        set.headers["content-type"] = "application/atom+xml";
         return library
           .getAuthorBooksFeed(params.id, { page: query.page })
           .toXML();
