@@ -1,18 +1,20 @@
 import { Entry } from "./Entry.ts";
-import type { Book, Format } from "./types.ts";
+import type { Book, BookFormat, Format } from "./types.ts";
 import { Link } from "./Link.ts";
 
 export class BookEntry extends Entry {
-  constructor(book: Book) {
+  constructor(book: Book, bookFormats: BookFormat[]) {
     super(`urn:calibre:books:${book.id}`, book.title, book.updatedAt);
 
-    for (const format of book.formats) {
-      this.addLink(
-        new Link(`/opds/books/${book.id}/formats/${format}`)
-          .setType(BookEntry.getMimeType(format))
-          .setRel("http://opds-spec.org/acquisition"),
-      );
-    }
+    bookFormats
+      .filter((bookFormat) => bookFormat.id === book.id)
+      .forEach((bookFormat) => {
+        this.addLink(
+          new Link(`/opds/books/${book.id}/formats/${bookFormat.format}`)
+            .setType(BookEntry.getMimeType(bookFormat.format))
+            .setRel("http://opds-spec.org/acquisition"),
+        );
+      });
   }
 
   static getMimeType(format: Format) {

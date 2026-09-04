@@ -13,9 +13,15 @@ export type Format = "epub" | "pdf" | "awz3" | "mobi";
 export type Book = {
   id: number;
   title: string;
+  sort: string;
   updatedAt: string;
-  folder: string;
-  formats: { format: Format; fileName: string }[];
+  path: string;
+};
+
+export type BookFormat = {
+  id: number;
+  format: Format;
+  fileName: string;
 };
 
 export type Series = {

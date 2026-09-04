@@ -15,10 +15,10 @@ const main = async () => {
     })
     .get(
       "/opds/authors",
-      ({ query, set }) => {
+      async ({ query, set }) => {
         set.headers["content-type"] = "application/atom+xml";
 
-        return library.getAuthorListFeed({ page: query.page }).toXML();
+        return (await library.getAuthorListFeed({ page: query.page })).toXML();
       },
       {
         query: t.Object({
@@ -28,11 +28,11 @@ const main = async () => {
     )
     .get(
       "/opds/authors/:id",
-      ({ params, query, set }) => {
+      async ({ params, query, set }) => {
         set.headers["content-type"] = "application/atom+xml";
-        return library
-          .getAuthorBooksFeed(params.id, { page: query.page })
-          .toXML();
+        return (
+          await library.getAuthorBooksFeed(params.id, { page: query.page })
+        ).toXML();
       },
       {
         params: t.Object({
@@ -45,8 +45,8 @@ const main = async () => {
     )
     .get(
       "/opds/series/",
-      ({ query }) => {
-        return library.getSeriesListFeed({ page: query.page }).toXML();
+      async ({ query }) => {
+        return (await library.getSeriesListFeed({ page: query.page })).toXML();
       },
       {
         query: t.Object({
@@ -56,10 +56,10 @@ const main = async () => {
     )
     .get(
       "/opds/series/:id",
-      ({ params, query }) => {
-        return library
-          .getSeriesBooksFeed(params.id, { page: query.page })
-          .toXML();
+      async ({ params, query }) => {
+        return (
+          await library.getSeriesBooksFeed(params.id, { page: query.page })
+        ).toXML();
       },
       {
         params: t.Object({
@@ -72,8 +72,8 @@ const main = async () => {
     )
     .get(
       "/opds/tags",
-      ({ query }) => {
-        return library.getTagListFeed({ page: query.page }).toXML();
+      async ({ query }) => {
+        return (await library.getTagListFeed({ page: query.page })).toXML();
       },
       {
         query: t.Object({
@@ -83,8 +83,10 @@ const main = async () => {
     )
     .get(
       "/opds/tags/:id",
-      ({ params, query }) => {
-        return library.getTagBooksFeed(params.id, { page: query.page }).toXML();
+      async ({ params, query }) => {
+        return (
+          await library.getTagBooksFeed(params.id, { page: query.page })
+        ).toXML();
       },
       {
         params: t.Object({
@@ -97,8 +99,8 @@ const main = async () => {
     )
     .get(
       "/opds/books",
-      ({ query }) => {
-        return library.getBooksFeed({ page: query.page }).toXML();
+      async ({ query }) => {
+        return (await library.getBooksFeed({ page: query.page })).toXML();
       },
       {
         query: t.Object({
@@ -141,10 +143,10 @@ const main = async () => {
     })
     .get(
       "/opds/search",
-      ({ query }) => {
-        return library
-          .getSearchBooksFeed(query.q, { page: query.page })
-          .toXML();
+      async ({ query }) => {
+        return (
+          await library.getSearchBooksFeed(query.q, { page: query.page })
+        ).toXML();
       },
       {
         query: t.Object({
@@ -155,8 +157,8 @@ const main = async () => {
     )
     .get(
       "/get/:id/formats/:format",
-      ({ params }) => {
-        return file(library.getBookPath(params.id, params.format));
+      async ({ params }) => {
+        return file(await library.getBookPath(params.id, params.format));
       },
       {
         params: t.Object({
