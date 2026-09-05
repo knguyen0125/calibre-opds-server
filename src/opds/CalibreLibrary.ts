@@ -2,17 +2,11 @@ import { Link } from "./Link.ts";
 import { NavigationFeedLink } from "./NavigationFeedLink.ts";
 import { Feed } from "./Feed.ts";
 import { Entry } from "./Entry.ts";
-import type {
-  Author,
-  Book,
-  BookFormat,
-  Pagination,
-  Series,
-  Tag,
-} from "./types.ts";
+import type { Book, BookFormat, Pagination, Series, Tag } from "./types.ts";
 import { BookEntry } from "./BookEntry.ts";
 import * as Path from "node:path";
 import { sql } from "bun";
+import { AuthorEntry } from "./AuthorEntry.ts";
 
 /**
  * Calibre Library Model
@@ -133,30 +127,23 @@ export class CalibreLibrary {
   }
 
   async getAuthorListFeed(param: Pagination): Promise<Feed> {
-    const authors = await sql<Author[]>`WITH author_book_count AS (
-              SELECT author, count(DISTINCT book) AS booksCount
-              FROM books_authors_link
-              GROUP BY author
-          )
-          SELECT id, name, sort, booksCount
+    const authors = await sql<{ id: number }[]>`
+          SELECT id
           FROM authors
-          JOIN author_book_count ON authors.id = author_book_count.author
           ORDER BY sort asc
           LIMIT ${this.pageSize + 1}
           OFFSET ${this.pageSize * (param.page - 1)}`;
 
-    const updatedAt = await this.getUpdatedAt();
+    const entries = await Promise.all(
+      authors.map((author) => AuthorEntry.fromId(author.id)),
+    );
 
     return this.getCatalogFeed(
       {
         id: "urn:calibre:navigation-catalog:authors",
         title: "Calibre Library - Authors",
         baseUrl: "/opds/authors",
-        entries: authors.map((author) =>
-          new Entry(`urn:calibre:authors:${author.id}`, author.name, updatedAt)
-            .setContent("text", `${author.booksCount} books`)
-            .addLink(new NavigationFeedLink(`/opds/authors/${author.id}`)),
-        ),
+        entries,
       },
       param,
     );
@@ -201,21 +188,7 @@ export class CalibreLibrary {
         >`SELECT id from books ORDER BY sort limit ${this.pageSize + 1} offset ${this.pageSize * (param.page - 1)}`
       ).map((b) => b.id);
 
-    const books = options.bookIds
-      ? await sql<
-          Book[]
-        >`SELECT id, title, sort, last_modified as updatedAt, path FROM books WHERE id in ${sql(options.bookIds)} ORDER BY sort LIMIT ${this.pageSize + 1} OFFSET ${this.pageSize * (param.page - 1)};`
-      : await sql<
-          Book[]
-        >`SELECT id, title, sort, last_modified as updatedAt, path FROM books ORDER BY sort LIMIT ${this.pageSize + 1} OFFSET ${this.pageSize * (param.page - 1)};`;
-
-    const bookFormats = await sql<
-      BookFormat[]
-    >`SELECT book as id, LOWER(format) as format, name as fileName 
-            FROM data 
-            WHERE book in ${sql(books.map((book) => book.id))}`;
-
-    if (books.length > this.pageSize) {
+    if (bookIds.length > this.pageSize) {
       feed.addLink(
         new NavigationFeedLink(
           `${baseUrlWithQuery}page=${param.page + 1}`,
@@ -232,7 +205,9 @@ export class CalibreLibrary {
 
   async getAuthorBooksFeed(id: number, param: Pagination): Promise<Feed> {
     const author = (
-      await sql<Author[]>`SELECT id, name, sort from authors where id = ${id}`
+      await sql<
+        { sort: string }[]
+      >`SELECT id, name, sort from authors where id = ${id}`
     )[0];
 
     if (!author) {
@@ -248,7 +223,7 @@ export class CalibreLibrary {
     return this.getBooksAcquisitionFeed(
       {
         id: `urn:calibre:catalogs:authors:${id}`,
-        title: `Calibre Library - Authors - ${author.name}`,
+        title: `Calibre Library - Authors - ${author.sort}`,
         baseUrl: `/opds/authors/${id}`,
         bookIds,
       },
