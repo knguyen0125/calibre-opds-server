@@ -7,6 +7,7 @@ import { BookEntry } from "./BookEntry.ts";
 import * as Path from "node:path";
 import { sql } from "bun";
 import { AuthorEntry } from "./AuthorEntry.ts";
+import { SeriesEntry } from "./SeriesEntry.ts";
 
 /**
  * Calibre Library Model
@@ -105,7 +106,7 @@ export class CalibreLibrary {
       );
     }
 
-    for (const entry of options.entries) {
+    for (const entry of options.entries.slice(0, this.pageSize)) {
       feed.addEntry(entry);
     }
 
@@ -232,23 +233,17 @@ export class CalibreLibrary {
   }
 
   async getSeriesListFeed(param: Pagination): Promise<Feed> {
-    // TODO: Replace with Author from database
-    // This should overfetch (pageSize + 1) as a way to check for next page
-    const seriesList: Series[] = [];
-    // TODO: Replace with updated at from database
-    const updatedAt = await this.getUpdatedAt();
+    const seriesList = await sql<
+      { id: number }[]
+    >`SELECT id from series order by sort limit ${this.pageSize + 1} offset ${(param.page - 1) * this.pageSize}`;
 
     return this.getCatalogFeed(
       {
         id: "urn:calibre:navigation-catalog:authors",
         title: "Calibre Library - Series",
         baseUrl: "/opds/series",
-        entries: seriesList.map((series) =>
-          new Entry(
-            `urn:calibre:series:${series.id}`,
-            series.name,
-            updatedAt,
-          ).setContent("text", `${series.booksCount} books`),
+        entries: await Promise.all(
+          seriesList.map((series) => SeriesEntry.fromId(series.id)),
         ),
       },
       param,
