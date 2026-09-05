@@ -6,10 +6,12 @@ import { XML } from "bun";
  */
 export class Entry {
   private links: Link[] = [];
-  private content: { type: "text"; value: string } = {
+  private content: { type: "text" | "html"; value: string } = {
     type: "text",
     value: "",
   };
+
+  private authors: { name: string }[] = [];
 
   constructor(
     private id: string,
@@ -22,7 +24,12 @@ export class Entry {
     return this;
   }
 
-  setContent(type: "text", value: string) {
+  addAuthor(name: string) {
+    this.authors.push({ name });
+    return this;
+  }
+
+  setContent(type: "text" | "html", value: string) {
     this.content.type = type;
     this.content.value = value;
     return this;
@@ -48,6 +55,11 @@ export class Entry {
           attributes: {},
           children: [this.updated],
         },
+        ...this.authors.map((author) => ({
+          name: "author",
+          attributes: {},
+          children: [{ name: "name", attributes: {}, children: [author.name] }],
+        })),
         this.content.value
           ? {
               name: "content",

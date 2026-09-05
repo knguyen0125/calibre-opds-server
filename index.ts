@@ -1,13 +1,44 @@
-import Bun, { XML } from "bun";
+import Bun, { sql, XML } from "bun";
 import { CalibreLibrary } from "./src/opds/CalibreLibrary.ts";
 import { Elysia, file, t } from "elysia";
 import { requireAuth } from "./src/auth.ts";
+import * as FS from "node:fs";
+import * as Path from "node:path";
+import { BookEntry } from "./src/opds/BookEntry.ts";
+/**
+ * Validate preboot environment
+ */
+const prebootValidation = () => {
+  const calibreLibraryDir = process.env.CALIBRE_LIBRARY_DIR;
+  if (!calibreLibraryDir) {
+    throw new Error("CALIBRE_LIBRARY_DIR environment variable is not set");
+  }
+
+  if (!FS.existsSync(Path.resolve(calibreLibraryDir))) {
+    throw new Error(
+      `Calibre library directory ${calibreLibraryDir} does not exist`,
+    );
+  }
+
+  if (!FS.existsSync(Path.resolve(calibreLibraryDir, "metadata.db"))) {
+    throw new Error(`Calibre database in ${calibreLibraryDir} does not exist`);
+  }
+
+  // Set DATABASE_URL for Bun.SQL
+  Bun.env.DATABASE_URL = `file://${Path.resolve(calibreLibraryDir, "metadata.db")}`;
+};
 
 const main = async () => {
+  prebootValidation();
+  console.log(await BookEntry.fromId(377));
+
   const library = new CalibreLibrary(process.env.CALIBRE_LIBRARY_DIR!);
 
   const app = new Elysia()
     .onBeforeHandle(requireAuth)
+    .onBeforeHandle(({ path, query }) => {
+      console.log(path, query);
+    })
     .get("/opds", ({ set }) => {
       set.headers["content-type"] = "application/atom+xml";
 
@@ -45,7 +76,8 @@ const main = async () => {
     )
     .get(
       "/opds/series/",
-      async ({ query }) => {
+      async ({ set, query }) => {
+        set.headers["content-type"] = "application/xml";
         return (await library.getSeriesListFeed({ page: query.page })).toXML();
       },
       {
@@ -56,7 +88,8 @@ const main = async () => {
     )
     .get(
       "/opds/series/:id",
-      async ({ params, query }) => {
+      async ({ set, params, query }) => {
+        set.headers["content-type"] = "application/xml";
         return (
           await library.getSeriesBooksFeed(params.id, { page: query.page })
         ).toXML();
@@ -72,7 +105,8 @@ const main = async () => {
     )
     .get(
       "/opds/tags",
-      async ({ query }) => {
+      async ({ set, query }) => {
+        set.headers["content-type"] = "application/xml";
         return (await library.getTagListFeed({ page: query.page })).toXML();
       },
       {
@@ -83,7 +117,8 @@ const main = async () => {
     )
     .get(
       "/opds/tags/:id",
-      async ({ params, query }) => {
+      async ({ set, params, query }) => {
+        set.headers["content-type"] = "application/xml";
         return (
           await library.getTagBooksFeed(params.id, { page: query.page })
         ).toXML();
@@ -99,7 +134,8 @@ const main = async () => {
     )
     .get(
       "/opds/books",
-      async ({ query }) => {
+      async ({ set, query }) => {
+        set.headers["content-type"] = "application/xml";
         return (await library.getBooksFeed({ page: query.page })).toXML();
       },
       {
@@ -143,7 +179,8 @@ const main = async () => {
     })
     .get(
       "/opds/search",
-      async ({ query }) => {
+      async ({ set, query }) => {
+        set.headers["content-type"] = "application/xml";
         return (
           await library.getSearchBooksFeed(query.q, { page: query.page })
         ).toXML();
@@ -156,14 +193,36 @@ const main = async () => {
       },
     )
     .get(
-      "/get/:id/formats/:format",
-      async ({ params }) => {
-        return file(await library.getBookPath(params.id, params.format));
+      "/get/books/:id/formats/:format",
+      async ({ set, params }) => {
+        const { path, mimeType } = await library.getBookPath(
+          params.id,
+          params.format,
+        );
+
+        set.headers["content-type"] = mimeType;
+
+        return file(path);
       },
       {
         params: t.Object({
           id: t.Numeric(),
           format: t.String(),
+        }),
+      },
+    )
+    .get(
+      "/get/books/:id/cover",
+      async ({ set, params }) => {
+        const { path } = await library.getCoverPath(params.id);
+
+        set.headers["content-type"] = "image/jpeg";
+
+        return file(path);
+      },
+      {
+        params: t.Object({
+          id: t.Numeric(),
         }),
       },
     )

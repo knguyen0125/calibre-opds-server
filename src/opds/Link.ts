@@ -31,9 +31,9 @@ export class Link {
     return {
       name: "link",
       attributes: {
-        type: this.type,
-        title: this.title,
-        rel: this.rel,
+        ...(this.type ? { type: this.type } : {}),
+        ...(this.title ? { title: this.title } : {}),
+        ...(this.rel ? { rel: this.rel } : {}),
         href: this.href,
       },
       children: [],

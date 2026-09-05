@@ -2,7 +2,6 @@ import { Link } from "./Link.ts";
 import { NavigationFeedLink } from "./NavigationFeedLink.ts";
 import { Feed } from "./Feed.ts";
 import { Entry } from "./Entry.ts";
-import { AcquisitionFeedLink } from "./AcquisitionFeedLink.ts";
 import type {
   Author,
   Book,
@@ -13,51 +12,14 @@ import type {
 } from "./types.ts";
 import { BookEntry } from "./BookEntry.ts";
 import * as Path from "node:path";
-import { Database } from "bun:sqlite";
-import type { SQLQueryBindings } from "bun:sqlite";
-import * as FS from "node:fs";
-import { SQL } from "bun";
+import { sql } from "bun";
 
 /**
  * Calibre Library Model
  */
 export class CalibreLibrary {
   private readonly pageSize: number = 20;
-  private readonly databaseUrl: string;
-  constructor(private readonly calibreLibraryDir: string) {
-    if (!this.calibreLibraryDir) {
-      throw new Error("Calibre library directory is required");
-    }
-
-    if (!FS.existsSync(Path.resolve(this.calibreLibraryDir))) {
-      throw new Error(
-        `Calibre library directory ${this.calibreLibraryDir} does not exist`,
-      );
-    }
-
-    this.databaseUrl = Path.resolve(this.calibreLibraryDir, "metadata.db");
-  }
-  private getSql() {
-    return new SQL({
-      adapter: "sqlite",
-      filename: this.databaseUrl,
-      readonly: true,
-      onconnect: (err) => {
-        if (err) {
-          console.error(`Error connecting to database: ${err}`);
-        } else {
-          console.log(`Connected to database at ${this.databaseUrl}`);
-        }
-      },
-      onclose: (err) => {
-        if (err) {
-          console.error(`Error disconnecting from database: ${err}`);
-        } else {
-          console.log(`Disconnected from database at ${this.databaseUrl}`);
-        }
-      },
-    });
-  }
+  constructor(private readonly calibreLibraryDir: string) {}
 
   public getRootFeed(): Feed {
     // TODO: Replace with latest changes in database?
@@ -113,17 +75,17 @@ export class CalibreLibrary {
     return rootFeed;
   }
 
-  private getCatalogFeed(
+  private async getCatalogFeed(
     options: {
       id: string;
       title: string;
-      updatedAt: string;
       baseUrl: string;
       entries: Entry[];
     },
     param: Pagination,
-  ): Feed {
-    const feed = new Feed(options.id, options.title, options.updatedAt);
+  ): Promise<Feed> {
+    const updatedAt = await this.getUpdatedAt();
+    const feed = new Feed(options.id, options.title, updatedAt);
 
     const baseUrl = options.baseUrl.includes("?")
       ? `${options.baseUrl}&`
@@ -157,8 +119,6 @@ export class CalibreLibrary {
   }
 
   private async getUpdatedAt() {
-    const sql = this.getSql();
-
     const rows = await sql<
       {
         updatedAt: string;
@@ -173,7 +133,6 @@ export class CalibreLibrary {
   }
 
   async getAuthorListFeed(param: Pagination): Promise<Feed> {
-    const sql = this.getSql();
     const authors = await sql<Author[]>`WITH author_book_count AS (
               SELECT author, count(DISTINCT book) AS booksCount
               FROM books_authors_link
@@ -192,7 +151,6 @@ export class CalibreLibrary {
       {
         id: "urn:calibre:navigation-catalog:authors",
         title: "Calibre Library - Authors",
-        updatedAt,
         baseUrl: "/opds/authors",
         entries: authors.map((author) =>
           new Entry(`urn:calibre:authors:${author.id}`, author.name, updatedAt)
@@ -204,18 +162,17 @@ export class CalibreLibrary {
     );
   }
 
-  private getBooksAcquisitionFeed(
+  private async getBooksAcquisitionFeed(
     options: {
       id: string;
       title: string;
-      updatedAt: string;
       baseUrl: string;
-      books: Book[];
-      bookFormats: BookFormat[];
+      bookIds?: number[];
     },
     param: Pagination,
-  ): Feed {
-    const feed = new Feed(options.id, options.title, options.updatedAt);
+  ): Promise<Feed> {
+    const updatedAt = await this.getUpdatedAt();
+    const feed = new Feed(options.id, options.title, updatedAt);
 
     // If includes ?, then we can assume that it already has a query string => append &
     const baseUrlWithQuery = options.baseUrl.includes("?")
@@ -236,7 +193,29 @@ export class CalibreLibrary {
       );
     }
 
-    if (options.books.length > this.pageSize) {
+    const bookIds =
+      options.bookIds ||
+      (
+        await sql<
+          { id: number }[]
+        >`SELECT id from books ORDER BY sort limit ${this.pageSize + 1} offset ${this.pageSize * (param.page - 1)}`
+      ).map((b) => b.id);
+
+    const books = options.bookIds
+      ? await sql<
+          Book[]
+        >`SELECT id, title, sort, last_modified as updatedAt, path FROM books WHERE id in ${sql(options.bookIds)} ORDER BY sort LIMIT ${this.pageSize + 1} OFFSET ${this.pageSize * (param.page - 1)};`
+      : await sql<
+          Book[]
+        >`SELECT id, title, sort, last_modified as updatedAt, path FROM books ORDER BY sort LIMIT ${this.pageSize + 1} OFFSET ${this.pageSize * (param.page - 1)};`;
+
+    const bookFormats = await sql<
+      BookFormat[]
+    >`SELECT book as id, LOWER(format) as format, name as fileName 
+            FROM data 
+            WHERE book in ${sql(books.map((book) => book.id))}`;
+
+    if (books.length > this.pageSize) {
       feed.addLink(
         new NavigationFeedLink(
           `${baseUrlWithQuery}page=${param.page + 1}`,
@@ -244,15 +223,14 @@ export class CalibreLibrary {
       );
     }
 
-    for (const book of options.books) {
-      feed.addEntry(new BookEntry(book, options.bookFormats));
+    for (let i = 0; i < bookIds.length && i < this.pageSize; i++) {
+      feed.addEntry(await BookEntry.fromId(bookIds[i]!));
     }
 
     return feed;
   }
 
   async getAuthorBooksFeed(id: number, param: Pagination): Promise<Feed> {
-    const sql = this.getSql();
     const author = (
       await sql<Author[]>`SELECT id, name, sort from authors where id = ${id}`
     )[0];
@@ -261,31 +239,18 @@ export class CalibreLibrary {
       throw new Error(`Author with id ${id} not found`);
     }
 
-    const books = await sql<
-      Book[]
-    >`SELECT id, title, sort, last_modified as updatedAt, path 
-            FROM books
-            WHERE id in (SELECT book FROM books_authors_link where author = ${id})
-            ORDER BY sort
-            LIMIT ${this.pageSize + 1}
-            OFFSET ${this.pageSize * (param.page - 1)};`;
-
-    const bookFormats = await sql<
-      BookFormat[]
-    >`SELECT book as id, LOWER(format) as format, name as fileName 
-            FROM data 
-            WHERE book in ${sql(books.map((book) => book.id))}`;
-
-    const updatedAt = await this.getUpdatedAt();
+    const bookIds = (
+      await sql<
+        { book: number }[]
+      >`select book from books_authors_link where author = ${id}`
+    ).map((book) => book.book);
 
     return this.getBooksAcquisitionFeed(
       {
         id: `urn:calibre:catalogs:authors:${id}`,
         title: `Calibre Library - Authors - ${author.name}`,
-        updatedAt,
         baseUrl: `/opds/authors/${id}`,
-        books,
-        bookFormats,
+        bookIds,
       },
       param,
     );
@@ -302,7 +267,6 @@ export class CalibreLibrary {
       {
         id: "urn:calibre:navigation-catalog:authors",
         title: "Calibre Library - Series",
-        updatedAt,
         baseUrl: "/opds/series",
         entries: seriesList.map((series) =>
           new Entry(
@@ -314,23 +278,29 @@ export class CalibreLibrary {
       },
       param,
     );
-    throw new Error("Method not implemented.");
   }
 
   async getSeriesBooksFeed(id: number, param: Pagination): Promise<Feed> {
-    const series: Series = {} as any as Series;
-    const books: Book[] = [];
-    const bookFormats: BookFormat[] = [];
-    const updatedAt = await this.getUpdatedAt();
+    const series = (
+      await sql<Series[]>`SELECT id, name, sort from series where id = ${id}`
+    )[0];
+
+    if (!series) {
+      throw new Error("Series not found");
+    }
+
+    const bookIds = (
+      await sql<
+        { book: number }[]
+      >`select book from books_series_link where series = ${id}`
+    ).map((book) => book.book);
 
     return this.getBooksAcquisitionFeed(
       {
         id: `urn:calibre:catalogs:series:${id}`,
         title: series.name,
-        updatedAt,
         baseUrl: `/opds/series/${id}`,
-        books,
-        bookFormats,
+        bookIds,
       },
       param,
     );
@@ -347,7 +317,6 @@ export class CalibreLibrary {
       {
         id: "urn:calibre:navigation-catalog:authors",
         title: "Calibre Library - Tags",
-        updatedAt,
         baseUrl: "/opds/tags",
         entries: tags.map((tag) =>
           new Entry(
@@ -362,72 +331,98 @@ export class CalibreLibrary {
   }
 
   async getTagBooksFeed(id: number, param: Pagination): Promise<Feed> {
-    const tag: Tag = {} as any as Tag;
-    const books: Book[] = [];
-    const bookFormats: BookFormat[] = [];
-    const updatedAt = await this.getUpdatedAt();
+    const tag = (
+      await sql<Tag[]>`SELECT id, name FROM tags WHERE id = ${id}`
+    )[0];
+
+    if (!tag) {
+      throw new Error(`Tag with id ${id} not found`);
+    }
+
+    const bookIds = (
+      await sql<
+        { book: number }[]
+      >`select book from books_tags_link where tag = ${id}`
+    ).map((book) => book.book);
 
     return this.getBooksAcquisitionFeed(
       {
         id: `urn:calibre:catalogs:tags:${id}`,
         title: tag.name,
-        updatedAt,
         baseUrl: `/opds/tags/${id}`,
-        books,
-        bookFormats,
+        bookIds,
       },
       param,
     );
   }
 
   async getBooksFeed(param: Pagination): Promise<Feed> {
-    const books: Book[] = [];
-    const bookFormats: BookFormat[] = [];
-    const updatedAt = await this.getUpdatedAt();
-
     return this.getBooksAcquisitionFeed(
       {
         id: `urn:calibre:catalogs:books`,
         title: "Calibre Library - Books",
-        updatedAt,
         baseUrl: `/opds/books`,
-        books,
-        bookFormats,
       },
       param,
     );
   }
 
   async getSearchBooksFeed(query: string, param: Pagination): Promise<Feed> {
-    const books: Book[] = [];
-    const bookFormats: BookFormat[] = [];
-    const updatedAt = await this.getUpdatedAt();
+    const bookIds = (
+      await sql<
+        { id: number }[]
+      >`select id from books where lower(title) like ${"%" + query.toLowerCase() + "%"}`
+    ).map((book) => book.id);
 
     return this.getBooksAcquisitionFeed(
       {
         id: `urn:calibre:catalogs:books`,
         title: `Calibre Library - Search - ${query}`,
-        updatedAt,
         baseUrl: `/opds/search?q=${query}`,
-        books,
-        bookFormats,
+        bookIds,
       },
       param,
     );
   }
 
-  async getBookPath(id: number, format: string): Promise<string> {
-    const book: Book = {} as any as Book;
-    const bookFormat: BookFormat = {} as any as BookFormat;
+  async getBookPath(
+    id: number,
+    format: string,
+  ): Promise<{ path: string; mimeType: string }> {
+    const book = (await sql<Book[]>`select * from books where id = ${id}`)[0];
+    if (!book) {
+      throw new Error(`Book ${id} not found`);
+    }
+
+    const bookFormat = (
+      await sql<
+        BookFormat[]
+      >`SELECT book as id, LOWER(format) as format, name as fileName 
+            FROM data where book = ${id} and lower(format) = ${format.toLowerCase()}`
+    )[0];
 
     if (!bookFormat) {
       throw new Error(`Format ${format} not found for book ${id}`);
     }
 
-    return Path.resolve(
-      this.calibreLibraryDir,
-      book.path,
-      `${bookFormat.fileName}.${bookFormat.format}`,
-    );
+    return {
+      path: Path.resolve(
+        this.calibreLibraryDir,
+        book.path,
+        `${bookFormat.fileName}.${bookFormat.format}`,
+      ),
+      mimeType: BookEntry.getMimeType(bookFormat.format),
+    };
+  }
+
+  async getCoverPath(id: number): Promise<{ path: string }> {
+    const book = (await sql<Book[]>`select * from books where id = ${id}`)[0];
+    if (!book) {
+      throw new Error(`Book ${id} not found`);
+    }
+
+    return {
+      path: Path.resolve(this.calibreLibraryDir, book.path, `cover.jpg`),
+    };
   }
 }
