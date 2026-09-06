@@ -30,7 +30,6 @@ const prebootValidation = () => {
 
 const main = async () => {
   prebootValidation();
-  console.log(await Book.fromId(377));
 
   const library = new CalibreLibrary();
 
