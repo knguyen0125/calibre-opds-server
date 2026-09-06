@@ -76,12 +76,26 @@ export class CalibreLibrary {
       id: string;
       title: string;
       baseUrl: string;
-      entries: Entry[];
+      table: string;
+      orderBy: string;
+      entryFromId: (id: number) => Promise<Entry>;
     },
     param: Pagination,
   ): Promise<Feed> {
     const updatedAt = await this.getUpdatedAt();
     const feed = new Feed(options.id, options.title, updatedAt);
+
+    // Identifiers come from literals in this class; values stay bound
+    const rows: { id: number }[] = await sql`
+      SELECT id 
+      FROM ${sql(options.table)} 
+      ORDER BY ${sql(options.orderBy)} asc 
+      LIMIT ${this.pageSize + 1} 
+      OFFSET ${this.pageSize * (param.page - 1)}`;
+
+    const entries = await Promise.all(
+      rows.map((row) => options.entryFromId(row.id)),
+    );
 
     const baseUrl = options.baseUrl.includes("?")
       ? `${options.baseUrl}&`
@@ -99,7 +113,7 @@ export class CalibreLibrary {
       );
     }
 
-    if (options.entries.length > this.pageSize) {
+    if (entries.length > this.pageSize) {
       feed.addLink(
         new NavigationFeedLink(`${baseUrl}page=${param.page + 1}`).setRel(
           "next",
@@ -107,7 +121,7 @@ export class CalibreLibrary {
       );
     }
 
-    for (const entry of options.entries.slice(0, this.pageSize)) {
+    for (const entry of entries.slice(0, this.pageSize)) {
       feed.addEntry(entry);
     }
 
@@ -129,23 +143,14 @@ export class CalibreLibrary {
   }
 
   async getAuthorListFeed(param: Pagination): Promise<Feed> {
-    const authors = await sql<{ id: number }[]>`
-          SELECT id
-          FROM authors
-          ORDER BY sort asc
-          LIMIT ${this.pageSize + 1}
-          OFFSET ${this.pageSize * (param.page - 1)}`;
-
-    const entries = await Promise.all(
-      authors.map((author) => AuthorEntry.fromId(author.id)),
-    );
-
     return this.getCatalogFeed(
       {
         id: "urn:calibre:navigation-catalog:authors",
         title: "Calibre Library - Authors",
         baseUrl: "/opds/authors",
-        entries,
+        table: "authors",
+        orderBy: "sort",
+        entryFromId: AuthorEntry.fromId,
       },
       param,
     );
@@ -234,18 +239,14 @@ export class CalibreLibrary {
   }
 
   async getSeriesListFeed(param: Pagination): Promise<Feed> {
-    const seriesList = await sql<
-      { id: number }[]
-    >`SELECT id from series order by sort limit ${this.pageSize + 1} offset ${(param.page - 1) * this.pageSize}`;
-
     return this.getCatalogFeed(
       {
-        id: "urn:calibre:navigation-catalog:authors",
+        id: "urn:calibre:navigation-catalog:series",
         title: "Calibre Library - Series",
         baseUrl: "/opds/series",
-        entries: await Promise.all(
-          seriesList.map((series) => SeriesEntry.fromId(series.id)),
-        ),
+        table: "series",
+        orderBy: "sort",
+        entryFromId: SeriesEntry.fromId,
       },
       param,
     );
@@ -280,18 +281,14 @@ export class CalibreLibrary {
   }
 
   async getTagListFeed(param: Pagination): Promise<Feed> {
-    const tags = await sql<
-      { id: number }[]
-    >`SELECT id from tags order by name limit ${this.pageSize + 1} offset ${(param.page - 1) * this.pageSize}`;
-
     return this.getCatalogFeed(
       {
-        id: "urn:calibre:navigation-catalog:authors",
+        id: "urn:calibre:navigation-catalog:tags",
         title: "Calibre Library - Tags",
         baseUrl: "/opds/tags",
-        entries: await Promise.all(
-          tags.map(async (tag) => await TagEntry.fromId(tag.id)),
-        ),
+        table: "tags",
+        orderBy: "name",
+        entryFromId: TagEntry.fromId,
       },
       param,
     );
@@ -317,7 +314,7 @@ export class CalibreLibrary {
     return this.getBooksAcquisitionFeed(
       {
         id: `urn:calibre:catalogs:tags:${id}`,
-        title: `Calibre Library -Tags - ${tag.name}`,
+        title: `Calibre Library - Tags - ${tag.name}`,
         baseUrl: `/opds/tags/${id}`,
         bookIds,
       },
