@@ -16,7 +16,7 @@ export class Series extends Entry implements BookSource {
     super(id, title, updated);
   }
 
-  static readonly feedId = "urn:calibre:navigation-catalog:series";
+  static readonly feedId = "urn:calibre:series";
   static readonly feedTitle = "Calibre Library - Series";
   static readonly feedBaseUrl = "/opds/series";
 
@@ -38,7 +38,7 @@ export class Series extends Entry implements BookSource {
     const entry = new Series(
       series.id,
       series.name,
-      `urn:calibre:series:${series.id}`,
+      `${this.feedId}:${series.id}`,
       series.sort,
       updatedAt[0]?.updated_at || new Date().toISOString(),
     );
@@ -48,7 +48,7 @@ export class Series extends Entry implements BookSource {
     >`SELECT count(*) as book_count from books_series_link where series = ${id}`;
 
     entry.setContent("text", `${bookCount[0]?.book_count || 0} books`);
-    entry.addLink(new NavigationFeedLink(`/opds/series/${id}`));
+    entry.addLink(new NavigationFeedLink(`${Series.feedBaseUrl}/${id}`));
 
     return entry;
   }

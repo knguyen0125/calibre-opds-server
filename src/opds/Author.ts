@@ -2,7 +2,7 @@ import { Entry } from "./Entry.ts";
 import { sql } from "bun";
 import { NavigationFeedLink } from "./NavigationFeedLink.ts";
 import { Book } from "./Book.ts";
-import { type BookSource } from "./types.ts";
+import type { BookSource } from "./types.ts";
 import { PAGE_SIZE } from "./constants.ts";
 
 export class Author extends Entry implements BookSource {
@@ -15,7 +15,7 @@ export class Author extends Entry implements BookSource {
     super(id, title, updated);
   }
 
-  static readonly feedId = "urn:calibre:navigation-catalog:authors";
+  static readonly feedId = "urn:calibre:authors";
   static readonly feedTitle = "Calibre Library - Authors";
   static readonly feedBaseUrl = "/opds/authors";
 
@@ -36,7 +36,7 @@ export class Author extends Entry implements BookSource {
 
     const entry = new Author(
       author.id,
-      `urn:calibre:authors:${author.id}`,
+      `${this.feedId}:${author.id}`,
       author.sort,
       updatedAt[0]?.updated_at || new Date().toISOString(),
     );
@@ -46,7 +46,7 @@ export class Author extends Entry implements BookSource {
     >`SELECT count(*) as book_count from books_authors_link where author = ${id}`;
 
     entry.setContent("text", `${bookCount[0]?.book_count || 0} books`);
-    entry.addLink(new NavigationFeedLink(`/opds/authors/${id}`));
+    entry.addLink(new NavigationFeedLink(`${this.feedBaseUrl}/${id}`));
 
     return entry;
   }

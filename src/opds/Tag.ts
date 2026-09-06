@@ -15,7 +15,7 @@ export class Tag extends Entry implements BookSource {
     super(id, title, updated);
   }
 
-  static readonly feedId = "urn:calibre:navigation-catalog:tags";
+  static readonly feedId = "urn:calibre:tags";
   static readonly feedTitle = "Calibre Library - Tags";
   static readonly feedBaseUrl = "/opds/tags";
 
@@ -36,7 +36,7 @@ export class Tag extends Entry implements BookSource {
 
     const entry = new Tag(
       tag.id,
-      `urn:calibre:tags:${tag.id}`,
+      `${this.feedId}:${tag.id}`,
       tag.name,
       updatedAt[0]?.updated_at || new Date().toISOString(),
     );
@@ -46,7 +46,7 @@ export class Tag extends Entry implements BookSource {
     >`SELECT count(*) as book_count from books_tags_link where tag = ${id}`;
 
     entry.setContent("text", `${bookCount[0]?.book_count || 0} books`);
-    entry.addLink(new NavigationFeedLink(`/opds/tags/${id}`));
+    entry.addLink(new NavigationFeedLink(`${this.feedBaseUrl}/${id}`));
 
     return entry;
   }

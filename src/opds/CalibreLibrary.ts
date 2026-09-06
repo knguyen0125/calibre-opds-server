@@ -80,17 +80,21 @@ export class CalibreLibrary {
   }
 
   private async getCatalogFeed(
-    source: CatalogSource,
+    catalogSource: CatalogSource,
     param: Pagination,
   ): Promise<Feed> {
     const updatedAt = await this.getUpdatedAt();
-    const feed = new Feed(source.feedId, source.feedTitle, updatedAt);
+    const feed = new Feed(
+      catalogSource.feedId,
+      catalogSource.feedTitle,
+      updatedAt,
+    );
 
-    const entries = await source.getCatalogEntries(param.page);
+    const entries = await catalogSource.getCatalogEntries(param.page);
 
-    const baseUrl = source.feedBaseUrl.includes("?")
-      ? `${source.feedBaseUrl}&`
-      : `${source.feedBaseUrl}?`;
+    const baseUrl = catalogSource.feedBaseUrl.includes("?")
+      ? `${catalogSource.feedBaseUrl}&`
+      : `${catalogSource.feedBaseUrl}?`;
 
     feed.addLink(
       new NavigationFeedLink(`${baseUrl}page=${param.page}`).setRel("self"),
@@ -142,7 +146,7 @@ export class CalibreLibrary {
       id: string;
       title: string;
       baseUrl: string;
-      source: BookSource;
+      bookSource: BookSource;
     },
     param: Pagination,
   ): Promise<Feed> {
@@ -168,7 +172,7 @@ export class CalibreLibrary {
       );
     }
 
-    const books = await options.source.getBooks(param.page);
+    const books = await options.bookSource.getBooks(param.page);
 
     if (books.length > PAGE_SIZE) {
       feed.addLink(
@@ -193,7 +197,7 @@ export class CalibreLibrary {
         id: `urn:calibre:catalogs:authors:${id}`,
         title: `Calibre Library - Authors - ${author.title}`,
         baseUrl: `/opds/authors/${id}`,
-        source: author,
+        bookSource: author,
       },
       param,
     );
@@ -211,7 +215,7 @@ export class CalibreLibrary {
         id: `urn:calibre:catalogs:series:${id}`,
         title: series.name,
         baseUrl: `/opds/series/${id}`,
-        source: series,
+        bookSource: series,
       },
       param,
     );
@@ -229,7 +233,7 @@ export class CalibreLibrary {
         id: `urn:calibre:catalogs:tags:${id}`,
         title: `Calibre Library - Tags - ${tag.title}`,
         baseUrl: `/opds/tags/${id}`,
-        source: tag,
+        bookSource: tag,
       },
       param,
     );
@@ -241,7 +245,7 @@ export class CalibreLibrary {
         id: `urn:calibre:catalogs:books`,
         title: "Calibre Library - Books",
         baseUrl: `/opds/books`,
-        source: new AllBooks(),
+        bookSource: new AllBooks(),
       },
       param,
     );
@@ -253,7 +257,7 @@ export class CalibreLibrary {
         id: `urn:calibre:catalogs:books`,
         title: `Calibre Library - Search - ${query}`,
         baseUrl: `/opds/search?q=${query}`,
-        source: new SearchBooks(query),
+        bookSource: new SearchBooks(query),
       },
       param,
     );
@@ -265,7 +269,7 @@ export class CalibreLibrary {
         id: "urn:calibre:catalogs:newest",
         title: "Calibre Library - Newest",
         baseUrl: "/opds/newest",
-        source: new NewestBooks(),
+        bookSource: new NewestBooks(),
       },
       param,
     );
