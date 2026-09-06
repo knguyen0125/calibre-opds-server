@@ -2,9 +2,12 @@ import { Link } from "./Link.ts";
 import { NavigationFeedLink } from "./NavigationFeedLink.ts";
 import { Feed } from "./Feed.ts";
 import { Entry } from "./Entry.ts";
-import { type Pagination, type BookSource } from "./types.ts";
+import {
+  type Pagination,
+  type BookSource,
+  type CatalogSource,
+} from "./types.ts";
 import { PAGE_SIZE } from "./constants.ts";
-import { Book } from "./Book.ts";
 import { sql } from "bun";
 import { Author } from "./Author.ts";
 import { Series } from "./Series.ts";
@@ -77,34 +80,17 @@ export class CalibreLibrary {
   }
 
   private async getCatalogFeed(
-    options: {
-      id: string;
-      title: string;
-      baseUrl: string;
-      table: string;
-      orderBy: string;
-      entryFromId: (id: number) => Promise<Entry>;
-    },
+    source: CatalogSource,
     param: Pagination,
   ): Promise<Feed> {
     const updatedAt = await this.getUpdatedAt();
-    const feed = new Feed(options.id, options.title, updatedAt);
+    const feed = new Feed(source.feedId, source.feedTitle, updatedAt);
 
-    // Identifiers come from literals in this class; values stay bound
-    const rows: { id: number }[] = await sql`
-      SELECT id 
-      FROM ${sql(options.table)} 
-      ORDER BY ${sql(options.orderBy)} asc 
-      LIMIT ${PAGE_SIZE + 1}
-      OFFSET ${PAGE_SIZE * (param.page - 1)}`;
+    const entries = await source.getCatalogEntries(param.page);
 
-    const entries = await Promise.all(
-      rows.map((row) => options.entryFromId(row.id)),
-    );
-
-    const baseUrl = options.baseUrl.includes("?")
-      ? `${options.baseUrl}&`
-      : `${options.baseUrl}?`;
+    const baseUrl = source.feedBaseUrl.includes("?")
+      ? `${source.feedBaseUrl}&`
+      : `${source.feedBaseUrl}?`;
 
     feed.addLink(
       new NavigationFeedLink(`${baseUrl}page=${param.page}`).setRel("self"),
@@ -148,17 +134,7 @@ export class CalibreLibrary {
   }
 
   async getAuthorListFeed(param: Pagination): Promise<Feed> {
-    return this.getCatalogFeed(
-      {
-        id: "urn:calibre:navigation-catalog:authors",
-        title: "Calibre Library - Authors",
-        baseUrl: "/opds/authors",
-        table: "authors",
-        orderBy: "sort",
-        entryFromId: Author.fromId,
-      },
-      param,
-    );
+    return this.getCatalogFeed(Author, param);
   }
 
   private async getBooksAcquisitionFeed(
@@ -224,17 +200,7 @@ export class CalibreLibrary {
   }
 
   async getSeriesListFeed(param: Pagination): Promise<Feed> {
-    return this.getCatalogFeed(
-      {
-        id: "urn:calibre:navigation-catalog:series",
-        title: "Calibre Library - Series",
-        baseUrl: "/opds/series",
-        table: "series",
-        orderBy: "sort",
-        entryFromId: Series.fromId,
-      },
-      param,
-    );
+    return this.getCatalogFeed(Series, param);
   }
 
   async getSeriesBooksFeed(id: number, param: Pagination): Promise<Feed> {
@@ -252,17 +218,7 @@ export class CalibreLibrary {
   }
 
   async getTagListFeed(param: Pagination): Promise<Feed> {
-    return this.getCatalogFeed(
-      {
-        id: "urn:calibre:navigation-catalog:tags",
-        title: "Calibre Library - Tags",
-        baseUrl: "/opds/tags",
-        table: "tags",
-        orderBy: "name",
-        entryFromId: Tag.fromId,
-      },
-      param,
-    );
+    return this.getCatalogFeed(Tag, param);
   }
 
   async getTagBooksFeed(id: number, param: Pagination): Promise<Feed> {

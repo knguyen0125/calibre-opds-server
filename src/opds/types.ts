@@ -1,3 +1,4 @@
+import type { Entry } from "./Entry.ts";
 import type { Book } from "./Book.ts";
 
 export type Pagination = {
@@ -12,4 +13,18 @@ export type Pagination = {
  */
 export interface BookSource {
   getBooks(page: number): Promise<Book[]>;
+}
+
+/**
+ * A source of entries for navigation feeds.
+ *
+ * Implementations return up to PAGE_SIZE + 1 entries so the caller can
+ * detect a following page and slice the extra entry off.
+ */
+export interface CatalogSource {
+  feedId: string;
+  feedTitle: string;
+  feedBaseUrl: string;
+
+  getCatalogEntries(page: number): Promise<Entry[]>;
 }

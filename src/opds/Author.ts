@@ -15,6 +15,10 @@ export class Author extends Entry implements BookSource {
     super(id, title, updated);
   }
 
+  static readonly feedId = "urn:calibre:navigation-catalog:authors";
+  static readonly feedTitle = "Calibre Library - Authors";
+  static readonly feedBaseUrl = "/opds/authors";
+
   static async fromId(id: number) {
     const author = (
       await sql<
@@ -45,6 +49,14 @@ export class Author extends Entry implements BookSource {
     entry.addLink(new NavigationFeedLink(`/opds/authors/${id}`));
 
     return entry;
+  }
+
+  static async getCatalogEntries(page: number): Promise<Author[]> {
+    const rows = await sql<{ id: number }[]>`
+      SELECT id FROM authors
+      ORDER BY sort asc
+      LIMIT ${PAGE_SIZE + 1} OFFSET ${PAGE_SIZE * (page - 1)}`;
+    return Promise.all(rows.map((row) => Author.fromId(row.id)));
   }
 
   async getBooks(page: number): Promise<Book[]> {

@@ -7,6 +7,7 @@ export class Book extends Entry {
   constructor(
     private readonly bookId: number,
     private readonly bookPath: string,
+    private readonly formats: { format: string; name: string }[],
     id: string,
     title: string,
     updated: string,
@@ -29,15 +30,10 @@ export class Book extends Entry {
     }
   }
 
-  async getBookPath(
-    format: string,
-  ): Promise<{ path: string; mimeType: string }> {
-    const bookFormat = (
-      await sql<
-        { format: string; fileName: string }[]
-      >`SELECT LOWER(format) as format, name as fileName
-            FROM data where book = ${this.bookId} and lower(format) = ${format.toLowerCase()}`
-    )[0];
+  getBookPath(format: string): { path: string; mimeType: string } {
+    const bookFormat = this.formats.find(
+      (candidate) => candidate.format === format.toLowerCase(),
+    );
 
     if (!bookFormat) {
       throw new Error(`Format ${format} not found for book ${this.bookId}`);
@@ -47,13 +43,13 @@ export class Book extends Entry {
       path: Path.resolve(
         process.env.CALIBRE_LIBRARY_DIR!,
         this.bookPath,
-        `${bookFormat.fileName}.${bookFormat.format}`,
+        `${bookFormat.name}.${bookFormat.format}`,
       ),
       mimeType: Book.getMimeType(bookFormat.format),
     };
   }
 
-  async getCoverPath(): Promise<{ path: string }> {
+  getCoverPath(): { path: string } {
     return {
       path: Path.resolve(
         process.env.CALIBRE_LIBRARY_DIR!,
@@ -106,11 +102,11 @@ export class Book extends Entry {
     const entry = new Book(
       book.id,
       book.path,
+      bookFormats,
       `urn:calibre:books:${book.id}`,
       book.title,
       new Date(book.last_modified).toISOString(),
     );
-
     for (const bookFormat of bookFormats) {
       entry.addLink(
         new Link(`/get/books/${book.id}/formats/${bookFormat.format}`)

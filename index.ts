@@ -208,7 +208,7 @@ const main = async () => {
       "/get/books/:id/formats/:format",
       async ({ set, params }) => {
         const book = await Book.fromId(params.id);
-        const { path, mimeType } = await book.getBookPath(params.format);
+        const { path, mimeType } = book.getBookPath(params.format);
 
         set.headers["content-type"] = mimeType;
 
@@ -225,7 +225,7 @@ const main = async () => {
       "/get/books/:id/cover",
       async ({ set, params }) => {
         const book = await Book.fromId(params.id);
-        const { path } = await book.getCoverPath();
+        const { path } = book.getCoverPath();
 
         set.headers["content-type"] = "image/jpeg";
 

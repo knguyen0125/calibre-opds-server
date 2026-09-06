@@ -15,6 +15,10 @@ export class Tag extends Entry implements BookSource {
     super(id, title, updated);
   }
 
+  static readonly feedId = "urn:calibre:navigation-catalog:tags";
+  static readonly feedTitle = "Calibre Library - Tags";
+  static readonly feedBaseUrl = "/opds/tags";
+
   static async fromId(id: number) {
     const tag = (
       await sql<
@@ -45,6 +49,14 @@ export class Tag extends Entry implements BookSource {
     entry.addLink(new NavigationFeedLink(`/opds/tags/${id}`));
 
     return entry;
+  }
+
+  static async getCatalogEntries(page: number): Promise<Tag[]> {
+    const rows = await sql<{ id: number }[]>`
+      SELECT id FROM tags
+      ORDER BY name asc
+      LIMIT ${PAGE_SIZE + 1} OFFSET ${PAGE_SIZE * (page - 1)}`;
+    return Promise.all(rows.map((row) => Tag.fromId(row.id)));
   }
 
   async getBooks(page: number): Promise<Book[]> {
