@@ -2,7 +2,7 @@ import { Link } from "./Link.ts";
 import { NavigationFeedLink } from "./NavigationFeedLink.ts";
 import { Feed } from "./Feed.ts";
 import { Entry } from "./Entry.ts";
-import type { Book, BookFormat, Pagination, Series, Tag } from "./types.ts";
+import type { Pagination } from "./types.ts";
 import { BookEntry } from "./BookEntry.ts";
 import * as Path from "node:path";
 import { sql } from "bun";
@@ -253,7 +253,9 @@ export class CalibreLibrary {
 
   async getSeriesBooksFeed(id: number, param: Pagination): Promise<Feed> {
     const series = (
-      await sql<Series[]>`SELECT id, name, sort from series where id = ${id}`
+      await sql<
+        { id: number; name: string; sort: string }[]
+      >`SELECT id, name, sort from series where id = ${id}`
     )[0];
 
     if (!series) {
@@ -297,7 +299,9 @@ export class CalibreLibrary {
 
   async getTagBooksFeed(id: number, param: Pagination): Promise<Feed> {
     const tag = (
-      await sql<Tag[]>`SELECT id, name FROM tags WHERE id = ${id}`
+      await sql<
+        { id: number; name: string }[]
+      >`SELECT id, name FROM tags WHERE id = ${id}`
     )[0];
 
     if (!tag) {
@@ -313,7 +317,7 @@ export class CalibreLibrary {
     return this.getBooksAcquisitionFeed(
       {
         id: `urn:calibre:catalogs:tags:${id}`,
-        title: tag.name,
+        title: `Calibre Library -Tags - ${tag.name}`,
         baseUrl: `/opds/tags/${id}`,
         bookIds,
       },
@@ -354,14 +358,18 @@ export class CalibreLibrary {
     id: number,
     format: string,
   ): Promise<{ path: string; mimeType: string }> {
-    const book = (await sql<Book[]>`select * from books where id = ${id}`)[0];
+    const book = (
+      await sql<
+        { id: number; path: string }[]
+      >`select id, path from books where id = ${id}`
+    )[0];
     if (!book) {
       throw new Error(`Book ${id} not found`);
     }
 
     const bookFormat = (
       await sql<
-        BookFormat[]
+        { id: number; format: string; fileName: string }[]
       >`SELECT book as id, LOWER(format) as format, name as fileName 
             FROM data where book = ${id} and lower(format) = ${format.toLowerCase()}`
     )[0];
@@ -381,7 +389,11 @@ export class CalibreLibrary {
   }
 
   async getCoverPath(id: number): Promise<{ path: string }> {
-    const book = (await sql<Book[]>`select * from books where id = ${id}`)[0];
+    const book = (
+      await sql<
+        { id: number; path: string }[]
+      >`select id, path from books where id = ${id}`
+    )[0];
     if (!book) {
       throw new Error(`Book ${id} not found`);
     }

@@ -1,10 +1,9 @@
 import { Entry } from "./Entry.ts";
-import type { Book, BookFormat, Format } from "./types.ts";
 import { Link } from "./Link.ts";
 import { sql } from "bun";
 
 export class BookEntry extends Entry {
-  static getMimeType(format: Format) {
+  static getMimeType(format: string) {
     switch (format) {
       case "epub":
         return "application/epub+zip";
@@ -41,7 +40,7 @@ export class BookEntry extends Entry {
     }
 
     const bookFormats = await sql<
-      { book: number; format: Format; name: string }[]
+      { book: number; format: string; name: string }[]
     >`SELECT book, lower(format) as format, name 
       FROM data 
       WHERE book = ${id};`;
