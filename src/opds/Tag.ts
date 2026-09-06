@@ -1,16 +1,28 @@
 import { Entry } from "./Entry.ts";
 import { sql } from "bun";
 import { NavigationFeedLink } from "./NavigationFeedLink.ts";
+import { Book } from "./Book.ts";
+import { type BookSource } from "./types.ts";
+import { PAGE_SIZE } from "./constants.ts";
 
-export class TagEntry extends Entry {
+export class Tag extends Entry implements BookSource {
+  constructor(
+    private readonly tagId: number,
+    id: string,
+    title: string,
+    updated: string,
+  ) {
+    super(id, title, updated);
+  }
+
   static async fromId(id: number) {
-    const series = (
+    const tag = (
       await sql<
         { id: number; name: string }[]
       >`SELECT id, name from tags where id = ${id}`
     )[0];
 
-    if (!series) {
+    if (!tag) {
       throw new Error(`Tag with id ${id} not found`);
     }
 
@@ -18,9 +30,10 @@ export class TagEntry extends Entry {
       { updated_at: string }[]
     >`SELECT strftime('%FT%TZ', max(last_modified)) as updated_at from books`;
 
-    const entry = new TagEntry(
-      `urn:calibre:tags:${series.id}`,
-      series.name,
+    const entry = new Tag(
+      tag.id,
+      `urn:calibre:tags:${tag.id}`,
+      tag.name,
       updatedAt[0]?.updated_at || new Date().toISOString(),
     );
 
@@ -32,5 +45,15 @@ export class TagEntry extends Entry {
     entry.addLink(new NavigationFeedLink(`/opds/tags/${id}`));
 
     return entry;
+  }
+
+  async getBooks(page: number): Promise<Book[]> {
+    const rows = await sql<{ id: number }[]>`
+      SELECT books.id FROM books
+      JOIN books_tags_link l ON l.book = books.id
+      WHERE l.tag = ${this.tagId}
+      ORDER BY books.sort asc
+      LIMIT ${PAGE_SIZE + 1} OFFSET ${PAGE_SIZE * (page - 1)}`;
+    return Promise.all(rows.map((row) => Book.fromId(row.id)));
   }
 }

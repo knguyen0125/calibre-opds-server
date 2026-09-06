@@ -4,7 +4,7 @@ import { Elysia, file, t } from "elysia";
 import { requireAuth } from "./src/auth.ts";
 import * as FS from "node:fs";
 import * as Path from "node:path";
-import { BookEntry } from "./src/opds/BookEntry.ts";
+import { Book } from "./src/opds/Book.ts";
 /**
  * Validate preboot environment
  */
@@ -30,19 +30,19 @@ const prebootValidation = () => {
 
 const main = async () => {
   prebootValidation();
-  console.log(await BookEntry.fromId(377));
+  console.log(await Book.fromId(377));
 
-  const library = new CalibreLibrary(process.env.CALIBRE_LIBRARY_DIR!);
+  const library = new CalibreLibrary();
 
   const app = new Elysia()
     .onBeforeHandle(requireAuth)
     .onBeforeHandle(({ path, query }) => {
       console.log(path, query);
     })
-    .get("/opds", ({ set }) => {
+    .get("/opds", async ({ set }) => {
       set.headers["content-type"] = "application/atom+xml";
 
-      return library.getRootFeed().toXML();
+      return (await library.getRootFeed()).toXML();
     })
     .get(
       "/opds/authors",
@@ -144,6 +144,18 @@ const main = async () => {
         }),
       },
     )
+    .get(
+      "/opds/newest",
+      async ({ set, query }) => {
+        set.headers["content-type"] = "application/xml";
+        return (await library.getNewestBooksFeed({ page: query.page })).toXML();
+      },
+      {
+        query: t.Object({
+          page: t.Numeric({ minimum: 1, default: 1 }),
+        }),
+      },
+    )
     .get("/opds/search.xml", ({}) => {
       const document: XML.Node = {
         name: "OpenSearchDescription",
@@ -195,10 +207,8 @@ const main = async () => {
     .get(
       "/get/books/:id/formats/:format",
       async ({ set, params }) => {
-        const { path, mimeType } = await library.getBookPath(
-          params.id,
-          params.format,
-        );
+        const book = await Book.fromId(params.id);
+        const { path, mimeType } = await book.getBookPath(params.format);
 
         set.headers["content-type"] = mimeType;
 
@@ -214,7 +224,8 @@ const main = async () => {
     .get(
       "/get/books/:id/cover",
       async ({ set, params }) => {
-        const { path } = await library.getCoverPath(params.id);
+        const book = await Book.fromId(params.id);
+        const { path } = await book.getCoverPath();
 
         set.headers["content-type"] = "image/jpeg";
 

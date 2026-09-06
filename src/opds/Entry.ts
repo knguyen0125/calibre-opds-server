@@ -13,11 +13,19 @@ export class Entry {
 
   private authors: { name: string }[] = [];
 
+  private readonly _title: string;
+
   constructor(
     private id: string,
-    private title: string,
+    title: string,
     private updated: string,
-  ) {}
+  ) {
+    this._title = title;
+  }
+
+  get title(): string {
+    return this._title;
+  }
 
   addLink(link: Link) {
     this.links.push(link);

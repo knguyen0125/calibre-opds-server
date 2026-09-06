@@ -1,8 +1,19 @@
 import { Entry } from "./Entry.ts";
 import { Link } from "./Link.ts";
 import { sql } from "bun";
+import * as Path from "node:path";
 
-export class BookEntry extends Entry {
+export class Book extends Entry {
+  constructor(
+    private readonly bookId: number,
+    private readonly bookPath: string,
+    id: string,
+    title: string,
+    updated: string,
+  ) {
+    super(id, title, updated);
+  }
+
   static getMimeType(format: string) {
     switch (format) {
       case "epub":
@@ -18,6 +29,40 @@ export class BookEntry extends Entry {
     }
   }
 
+  async getBookPath(
+    format: string,
+  ): Promise<{ path: string; mimeType: string }> {
+    const bookFormat = (
+      await sql<
+        { format: string; fileName: string }[]
+      >`SELECT LOWER(format) as format, name as fileName
+            FROM data where book = ${this.bookId} and lower(format) = ${format.toLowerCase()}`
+    )[0];
+
+    if (!bookFormat) {
+      throw new Error(`Format ${format} not found for book ${this.bookId}`);
+    }
+
+    return {
+      path: Path.resolve(
+        process.env.CALIBRE_LIBRARY_DIR!,
+        this.bookPath,
+        `${bookFormat.fileName}.${bookFormat.format}`,
+      ),
+      mimeType: Book.getMimeType(bookFormat.format),
+    };
+  }
+
+  async getCoverPath(): Promise<{ path: string }> {
+    return {
+      path: Path.resolve(
+        process.env.CALIBRE_LIBRARY_DIR!,
+        this.bookPath,
+        "cover.jpg",
+      ),
+    };
+  }
+
   static async fromId(id: number) {
     const book = (
       await sql<
@@ -31,7 +76,7 @@ export class BookEntry extends Entry {
         }[]
       >`
         SELECT id, title, sort, path, strftime('%FT%TZ', last_modified) as last_modified, has_cover
-        FROM books 
+        FROM books
         WHERE id = ${id};`
     )[0];
 
@@ -41,16 +86,16 @@ export class BookEntry extends Entry {
 
     const bookFormats = await sql<
       { book: number; format: string; name: string }[]
-    >`SELECT book, lower(format) as format, name 
-      FROM data 
+    >`SELECT book, lower(format) as format, name
+      FROM data
       WHERE book = ${id};`;
 
     const authors = await sql<
       { id: number; name: string }[]
-    >`SELECT authors.id, authors.name 
-      FROM authors 
-        LEFT JOIN books_authors_link on authors.id = books_authors_link.author 
-      WHERE books_authors_link.book = ${id} 
+    >`SELECT authors.id, authors.name
+      FROM authors
+        LEFT JOIN books_authors_link on authors.id = books_authors_link.author
+      WHERE books_authors_link.book = ${id}
       ORDER BY books_authors_link.id asc
       `;
 
@@ -58,7 +103,9 @@ export class BookEntry extends Entry {
       { book: number; text: string }[]
     >`SELECT book, text from comments where book = ${id}`;
 
-    const entry = new BookEntry(
+    const entry = new Book(
+      book.id,
+      book.path,
       `urn:calibre:books:${book.id}`,
       book.title,
       new Date(book.last_modified).toISOString(),
@@ -67,7 +114,7 @@ export class BookEntry extends Entry {
     for (const bookFormat of bookFormats) {
       entry.addLink(
         new Link(`/get/books/${book.id}/formats/${bookFormat.format}`)
-          .setType(BookEntry.getMimeType(bookFormat.format))
+          .setType(Book.getMimeType(bookFormat.format))
           .setRel("http://opds-spec.org/acquisition"),
       );
     }
