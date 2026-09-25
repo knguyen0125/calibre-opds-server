@@ -80,14 +80,22 @@ export const createApp = () => {
 
       return (await library.getRootFeed()).toXML();
     })
+    .get("/opds/authors", async ({ set }) => {
+      set.headers["content-type"] = "application/atom+xml";
+      return (await library.getAuthorAlphabetFeed()).toXML();
+    })
     .get(
-      "/opds/authors",
-      async ({ query, set }) => {
+      "/opds/authors/letters/:letter",
+      async ({ params, query, set }) => {
         set.headers["content-type"] = "application/atom+xml";
-
-        return (await library.getAuthorListFeed({ page: query.page })).toXML();
+        return (
+          await library.getAuthorLetterFeed(params.letter, { page: query.page })
+        ).toXML();
       },
       {
+        params: t.Object({
+          letter: t.String({ pattern: "^(other|[A-Za-z])$" }),
+        }),
         query: t.Object({
           page: t.Numeric({ minimum: 1, default: 1 }),
         }),
@@ -147,13 +155,22 @@ export const createApp = () => {
         }),
       },
     )
+    .get("/opds/tags", async ({ set }) => {
+      set.headers["content-type"] = "application/xml";
+      return (await library.getTagAlphabetFeed()).toXML();
+    })
     .get(
-      "/opds/tags",
-      async ({ set, query }) => {
+      "/opds/tags/letters/:letter",
+      async ({ params, query, set }) => {
         set.headers["content-type"] = "application/xml";
-        return (await library.getTagListFeed({ page: query.page })).toXML();
+        return (
+          await library.getTagLetterFeed(params.letter, { page: query.page })
+        ).toXML();
       },
       {
+        params: t.Object({
+          letter: t.String({ pattern: "^(other|[A-Za-z])$" }),
+        }),
         query: t.Object({
           page: t.Numeric({ minimum: 1, default: 1 }),
         }),
@@ -213,15 +230,26 @@ export const createApp = () => {
         }),
       },
     )
+    .get("/opds/books", async ({ set }) => {
+      set.headers["content-type"] = "application/xml";
+      return (await library.getBooksAlphabetFeed()).toXML();
+    })
     .get(
-      "/opds/books",
-      async ({ set, query, headers }) => {
+      "/opds/books/letters/:letter",
+      async ({ set, params, query, headers }) => {
         set.headers["content-type"] = "application/xml";
         return (
-          await library.getBooksFeed({ page: query.page }, deviceFromHeaders(headers))
+          await library.getBookLetterFeed(
+            params.letter,
+            { page: query.page },
+            deviceFromHeaders(headers),
+          )
         ).toXML();
       },
       {
+        params: t.Object({
+          letter: t.String({ pattern: "^(other|[A-Za-z])$" }),
+        }),
         query: t.Object({
           page: t.Numeric({ minimum: 1, default: 1 }),
         }),

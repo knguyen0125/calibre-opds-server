@@ -104,12 +104,17 @@ function buildFixtureDb() {
   );
   db.run(`INSERT INTO books (id, title, sort, timestamp, pubdate, series_index, path, last_modified, has_cover)
      VALUES (2, 'Project Hail Mary', 'Hail', 1700000001, '2021-05-04', 1.0, ' standalone', '2024-01-02T00:00:00Z', 0)`);
-  db.run(`INSERT INTO authors (id, name, sort) VALUES (1, 'Brandon Sanderson', 'Sanderson')`);
-  db.run(`INSERT INTO books_authors_link (book, author) VALUES (1, 1)`);
+  db.run(`INSERT INTO books (id, title, sort, timestamp, pubdate, series_index, path, last_modified, has_cover)
+     VALUES (3, 'The $100 Startup', '$100 Startup', 1700000002, '2012-05-24', 1.0, ' hundred', '2024-01-03T00:00:00Z', 0)`);
+  db.run(`INSERT INTO authors (id, name, sort) VALUES (1, 'Brandon Sanderson', 'Sanderson, Brandon')`);
+  db.run(`INSERT INTO authors (id, name, sort) VALUES (2, 'Lã Quán Trung', 'Lã Quán Trung')`);
+  db.run(`INSERT INTO books_authors_link (book, author) VALUES (1, 1), (3, 2)`);
   db.run(`INSERT INTO series (id, name, sort) VALUES (1, 'Mistborn', 'Mistborn')`);
   db.run(`INSERT INTO books_series_link (book, series) VALUES (1, 1)`);
   db.run(`INSERT INTO data (book, format, name) VALUES (1, 'EPUB', 'The Well of Ascension')`);
   db.run(`INSERT INTO languages (id, lang_code) VALUES (1, 'eng'), (2, 'vie')`);
+  db.run(`INSERT INTO tags (id, name, sort) VALUES (1, 'Fiction', 'Fiction'), (2, 'Sách Việt', 'Sách Việt')`);
+  db.run(`INSERT INTO books_tags_link (book, tag) VALUES (1, 1), (2, 2)`);
   db.run(`INSERT INTO books_languages_link (book, lang_code) VALUES (1, 1), (2, 2)`);
   db.close();
 }
@@ -226,6 +231,69 @@ describe("languages feed", () => {
     expect(xml).toContain("Calibre Library - Languages - English");
     expect(xml).toContain("<title>Mistborn - 02 - The Well of Ascension</title>");
     expect(xml).not.toContain("<author>");
+  });
+});
+
+describe("alphabet feeds", () => {
+  test("authors root is a letter index, diacritics folded", async () => {
+    const res = await get("/opds/authors", basicAuth("kien"));
+    const xml = await res.text();
+    expect(xml).toContain(">B<");
+    expect(xml).toContain(">L<");
+    expect(xml).toContain('href="/opds/authors/letters/B"');
+    expect(xml).toContain('href="/opds/authors/letters/L"');
+    expect(xml).not.toContain("Brandon Sanderson");
+  });
+
+  test("author letter bucket lists names", async () => {
+    const res = await get("/opds/authors/letters/L", basicAuth("kien"));
+    const xml = await res.text();
+    expect(xml).toContain("Calibre Library - Authors - L");
+    expect(xml).toContain("Lã Quán Trung");
+  });
+
+  test("books root is a letter index with one symbol bucket", async () => {
+    const res = await get("/opds/books", basicAuth("kien"));
+    const xml = await res.text();
+    expect(xml).toContain(">H<");
+    expect(xml).toContain(">W<");
+    expect(xml).toContain("<title>#</title>");
+    expect(xml).toContain('href="/opds/books/letters/other"');
+    expect(xml).not.toContain("Project Hail Mary");
+  });
+
+  test("book letter bucket carries the device tag", async () => {
+    const res = await get("/opds/books/letters/W", basicAuth("kien#X4"));
+    const xml = await res.text();
+    expect(xml).toContain("Calibre Library - Books - W");
+    expect(xml).toContain("<title>Mistborn - 02 - The Well of Ascension</title>");
+    expect(xml).not.toContain("<author>");
+  });
+
+  test("symbol bucket groups $ and digits together", async () => {
+    const res = await get("/opds/books/letters/other", basicAuth("kien"));
+    const xml = await res.text();
+    expect(xml).toContain("The $100 Startup");
+  });
+});
+
+describe("tags alphabet feed", () => {
+  test("tags root is a letter index, diacritics folded", async () => {
+    const res = await get("/opds/tags", basicAuth("kien"));
+    const xml = await res.text();
+    expect(xml).toContain(">F<");
+    expect(xml).toContain(">S<");
+    expect(xml).toContain('href="/opds/tags/letters/F"');
+    expect(xml).toContain('href="/opds/tags/letters/S"');
+    expect(xml).not.toContain("Fiction");
+  });
+
+  test("tag letter bucket lists names and links", async () => {
+    const res = await get("/opds/tags/letters/F", basicAuth("kien"));
+    const xml = await res.text();
+    expect(xml).toContain("Calibre Library - Tags - F");
+    expect(xml).toContain("Fiction");
+    expect(xml).toContain('href="/opds/tags/1"');
   });
 });
 

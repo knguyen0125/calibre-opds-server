@@ -14,7 +14,10 @@ import { Author } from "./Author.ts";
 import { Language } from "./Language.ts";
 import { Series } from "./Series.ts";
 import { Tag } from "./Tag.ts";
-import { AllBooks } from "./AllBooks.ts";
+import { TagLetter } from "./TagLetter.ts";
+import { AuthorLetter } from "./AuthorLetter.ts";
+import { BooksByLetter } from "./BooksByLetter.ts";
+import { letterLabel } from "./letters.ts";
 import { NewestBooks } from "./NewestBooks.ts";
 import { SearchBooks } from "./SearchBooks.ts";
 
@@ -155,9 +158,30 @@ export class CalibreLibrary {
     return new Date(rows[0]!.updatedAt).toISOString();
   }
 
-  async getAuthorListFeed(param: Pagination): Promise<Feed> {
-    return this.getCatalogFeed(Author, param);
+  async getAuthorAlphabetFeed(): Promise<Feed> {
+    const updatedAt = await this.getUpdatedAt();
+    const feed = new Feed(
+      "urn:calibre:catalogs:authors:alphabet",
+      "Calibre Library - Authors",
+      updatedAt,
+    );
+    feed.addLink(new NavigationFeedLink("/opds/authors").setRel("self"));
+    for (const letter of await Author.distinctLetters()) {
+      feed.addEntry(
+        new Entry(
+          `urn:calibre:catalogs:authors:letter:${letter}`,
+          letterLabel(letter),
+          updatedAt,
+        ).addLink(new NavigationFeedLink(`/opds/authors/letters/${letter}`)),
+      );
+    }
+    return feed;
   }
+
+  async getAuthorLetterFeed(letter: string, param: Pagination): Promise<Feed> {
+    return this.getCatalogFeed(new AuthorLetter(letter), param);
+  }
+
 
   private async getBooksAcquisitionFeed(
     options: {
@@ -250,9 +274,30 @@ export class CalibreLibrary {
     );
   }
 
-  async getTagListFeed(param: Pagination): Promise<Feed> {
-    return this.getCatalogFeed(Tag, param);
+  async getTagAlphabetFeed(): Promise<Feed> {
+    const updatedAt = await this.getUpdatedAt();
+    const feed = new Feed(
+      "urn:calibre:catalogs:tags:alphabet",
+      "Calibre Library - Tags",
+      updatedAt,
+    );
+    feed.addLink(new NavigationFeedLink("/opds/tags").setRel("self"));
+    for (const letter of await Tag.distinctLetters()) {
+      feed.addEntry(
+        new Entry(
+          `urn:calibre:catalogs:tags:letter:${letter}`,
+          letterLabel(letter),
+          updatedAt,
+        ).addLink(new NavigationFeedLink(`/opds/tags/letters/${letter}`)),
+      );
+    }
+    return feed;
   }
+
+  async getTagLetterFeed(letter: string, param: Pagination): Promise<Feed> {
+    return this.getCatalogFeed(new TagLetter(letter), param);
+  }
+
 
   async getTagBooksFeed(
     id: number,
@@ -295,13 +340,38 @@ export class CalibreLibrary {
       param,
     );
   }
-  async getBooksFeed(param: Pagination, device?: DeviceTag | null): Promise<Feed> {
+  async getBooksAlphabetFeed(): Promise<Feed> {
+    const updatedAt = await this.getUpdatedAt();
+    const feed = new Feed(
+      "urn:calibre:catalogs:books:alphabet",
+      "Calibre Library - Books",
+      updatedAt,
+    );
+    feed.addLink(new NavigationFeedLink("/opds/books").setRel("self"));
+    for (const letter of await BooksByLetter.distinctLetters()) {
+      feed.addEntry(
+        new Entry(
+          `urn:calibre:catalogs:books:letter:${letter}`,
+          letterLabel(letter),
+          updatedAt,
+        ).addLink(new NavigationFeedLink(`/opds/books/letters/${letter}`)),
+      );
+    }
+    return feed;
+  }
+
+  async getBookLetterFeed(
+    letter: string,
+    param: Pagination,
+    device?: DeviceTag | null,
+  ): Promise<Feed> {
+    const source = new BooksByLetter(letter);
     return this.getBooksAcquisitionFeed(
       {
-        id: `urn:calibre:catalogs:books`,
-        title: "Calibre Library - Books",
-        baseUrl: `/opds/books`,
-        bookSource: new AllBooks(),
+        id: `urn:calibre:catalogs:books:letter:${letter}`,
+        title: source.feedTitle,
+        baseUrl: source.feedBaseUrl,
+        bookSource: source,
         device,
       },
       param,

@@ -5,6 +5,7 @@ import { NavigationFeedLink } from "./NavigationFeedLink.ts";
 import { Book } from "./Book.ts";
 import { type BookSource } from "./types.ts";
 import { PAGE_SIZE } from "./constants.ts";
+import { distinctSortedLetters } from "./letters.ts";
 
 export class Author extends Entry implements BookSource {
   constructor(
@@ -38,7 +39,7 @@ export class Author extends Entry implements BookSource {
     const entry = new Author(
       author.id,
       `${this.feedId}:${author.id}`,
-      author.sort,
+      author.name,
       updatedAt[0]?.updated_at || new Date().toISOString(),
     );
 
@@ -52,12 +53,9 @@ export class Author extends Entry implements BookSource {
     return entry;
   }
 
-  static async getCatalogEntries(page: number): Promise<Author[]> {
-    const rows = await sql<{ id: number }[]>`
-      SELECT id FROM authors
-      ORDER BY sort asc
-      LIMIT ${PAGE_SIZE + 1} OFFSET ${PAGE_SIZE * (page - 1)}`;
-    return Promise.all(rows.map((row) => Author.fromId(row.id)));
+  static async distinctLetters(): Promise<string[]> {
+    const rows = await sql<{ name: string }[]>`SELECT name FROM authors`;
+    return distinctSortedLetters(rows.map((row) => row.name));
   }
 
   async getBooks(page: number, device?: DeviceTag | null): Promise<Book[]> {
@@ -65,6 +63,7 @@ export class Author extends Entry implements BookSource {
       SELECT books.id FROM books
       JOIN books_authors_link l ON l.book = books.id
       WHERE l.author = ${this.authorId}
+
       ORDER BY books.sort asc
       LIMIT ${PAGE_SIZE + 1} OFFSET ${PAGE_SIZE * (page - 1)}`;
     return Promise.all(rows.map((row) => Book.fromId(row.id, device)));

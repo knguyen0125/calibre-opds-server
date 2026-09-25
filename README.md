@@ -44,6 +44,13 @@ Root navigation: By Newest, By Authors, By Series, By Tags, By
 Languages, By Books, Reload Catalog, plus OpenSearch search at
 `/opds/search`.
 
+By Authors, By Tags, and By Books open an alphabet index first (one
+screen on the reader) instead of paging through thousands of entries.
+Author buckets use the first letter of the display name, not calibre's
+inverted sort (George R. R. Martin sits under G); diacritics fold to
+the base letter (Lã under L, Đ under D), and digits/symbols share a
+single "#" bucket. Book buckets use calibre's title sort.
+
 ## What the device feed does
 
 When a request carries a device tag, book entries are shaped for the
