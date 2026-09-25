@@ -1,5 +1,6 @@
 import { Entry } from "./Entry.ts";
-import { sql } from "bun";
+import { db as sql } from "../db.ts";
+import type { DeviceTag } from "../auth.ts";
 import { NavigationFeedLink } from "./NavigationFeedLink.ts";
 import { Book } from "./Book.ts";
 import { type BookSource } from "./types.ts";
@@ -61,13 +62,13 @@ export class Series extends Entry implements BookSource {
     return Promise.all(rows.map((row) => Series.fromId(row.id)));
   }
 
-  async getBooks(page: number): Promise<Book[]> {
+  async getBooks(page: number, device?: DeviceTag | null): Promise<Book[]> {
     const rows = await sql<{ id: number }[]>`
       SELECT books.id FROM books
       JOIN books_series_link l ON l.book = books.id
       WHERE l.series = ${this.seriesId}
       ORDER BY books.series_index asc
       LIMIT ${PAGE_SIZE + 1} OFFSET ${PAGE_SIZE * (page - 1)}`;
-    return Promise.all(rows.map((row) => Book.fromId(row.id)));
+    return Promise.all(rows.map((row) => Book.fromId(row.id, device)));
   }
 }

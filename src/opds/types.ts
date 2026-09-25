@@ -1,3 +1,4 @@
+import type { DeviceTag } from "../auth.ts";
 import type { Entry } from "./Entry.ts";
 import type { Book } from "./Book.ts";
 
@@ -12,7 +13,7 @@ export type Pagination = {
  * detect a following page and slice the extra book off.
  */
 export interface BookSource {
-  getBooks(page: number): Promise<Book[]>;
+  getBooks(page: number, device?: DeviceTag | null): Promise<Book[]>;
 }
 
 /**

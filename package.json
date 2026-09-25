@@ -11,7 +11,10 @@
     "typescript": "^7"
   },
   "dependencies": {
-    "elysia": "^1.4.30"
+    "elysia": "^1.4.30",
+    "jszip": "^3.10.1",
+    "linkedom": "^0.18.12",
+    "sharp": "^0.34.4"
   },
   "scripts": {
     "dev": "bun --watch index.ts",

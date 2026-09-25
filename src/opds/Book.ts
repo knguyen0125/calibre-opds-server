@@ -1,9 +1,13 @@
 import { Entry } from "./Entry.ts";
 import { Link } from "./Link.ts";
-import { sql } from "bun";
+import { db as sql } from "../db.ts";
+import type { DeviceTag } from "../auth.ts";
+import { deviceTitleFor } from "./deviceTitle.ts";
 import * as Path from "node:path";
 
 export class Book extends Entry {
+  private readonly authorNames: string[];
+
   constructor(
     private readonly bookId: number,
     private readonly bookPath: string,
@@ -11,8 +15,14 @@ export class Book extends Entry {
     id: string,
     title: string,
     updated: string,
+    authorNames: string[] = [],
   ) {
     super(id, title, updated);
+    this.authorNames = authorNames;
+  }
+
+  get authorsDisplay(): string[] {
+    return this.authorNames;
   }
 
   static getMimeType(format: string) {
@@ -59,7 +69,7 @@ export class Book extends Entry {
     };
   }
 
-  static async fromId(id: number) {
+  static async fromId(id: number, device?: DeviceTag | null) {
     const book = (
       await sql<
         {
@@ -95,18 +105,54 @@ export class Book extends Entry {
       ORDER BY books_authors_link.id asc
       `;
 
-    const comments = await sql<
-      { book: number; text: string }[]
-    >`SELECT book, text from comments where book = ${id}`;
+    const seriesRow = device
+      ? ((
+          await sql<{ name: string; series_index: number }[]>`
+            SELECT series.name, books.series_index
+            FROM books_series_link
+            JOIN series ON series.id = books_series_link.series
+            JOIN books ON books.id = books_series_link.book
+            WHERE books_series_link.book = ${id}
+            ORDER BY books_series_link.id asc
+            LIMIT 1`
+        )[0] ?? null)
+      : null;
+    const series = seriesRow
+      ? { name: seriesRow.name, index: seriesRow.series_index }
+      : null;
+
+    const comments = device
+      ? []
+      : await sql<{ book: number; text: string }[]>`
+          SELECT book, text from comments where book = ${id}`;
+
+    const authorNames = authors.map((author) => author.name);
+    const title = device ? deviceTitleFor(series, book.title) : book.title;
 
     const entry = new Book(
       book.id,
       book.path,
       bookFormats,
       `urn:calibre:books:${book.id}`,
-      book.title,
+      title,
       new Date(book.last_modified).toISOString(),
+      authorNames,
     );
+
+    if (device) {
+      // The X4 builds its download filename from the entry title alone,
+      // so author is omitted and only the EPUB acquisition link is
+      // emitted; covers and summaries are ignored by its parser.
+      const epub = bookFormats.find((f) => f.format === "epub");
+      if (epub) {
+        entry.addLink(
+          new Link(`/get/books/${book.id}/formats/epub`)
+            .setType("application/epub+zip")
+            .setRel("http://opds-spec.org/acquisition"),
+        );
+      }
+      return entry;
+    }
     for (const bookFormat of bookFormats) {
       entry.addLink(
         new Link(`/get/books/${book.id}/formats/${bookFormat.format}`)

@@ -2,14 +2,16 @@ import { Link } from "./Link.ts";
 import { NavigationFeedLink } from "./NavigationFeedLink.ts";
 import { Feed } from "./Feed.ts";
 import { Entry } from "./Entry.ts";
+import type { DeviceTag } from "../auth.ts";
 import {
   type Pagination,
   type BookSource,
   type CatalogSource,
 } from "./types.ts";
 import { PAGE_SIZE } from "./constants.ts";
-import { sql } from "bun";
+import { db as sql } from "../db.ts";
 import { Author } from "./Author.ts";
+import { Language } from "./Language.ts";
 import { Series } from "./Series.ts";
 import { Tag } from "./Tag.ts";
 import { AllBooks } from "./AllBooks.ts";
@@ -74,6 +76,22 @@ export class CalibreLibrary {
         "By Books (Alphabetical)",
         updatedAt,
       ).addLink(new NavigationFeedLink("/opds/books")),
+    );
+
+    rootFeed.addEntry(
+      new Entry(
+        "urn:calibre:catalogs:languages",
+        "By Languages",
+        updatedAt,
+      ).addLink(new NavigationFeedLink("/opds/languages")),
+    );
+
+    rootFeed.addEntry(
+      new Entry(
+        "urn:calibre:catalogs:reload",
+        "Reload Catalog",
+        updatedAt,
+      ).addLink(new NavigationFeedLink("/opds/reload")),
     );
 
     return rootFeed;
@@ -147,6 +165,7 @@ export class CalibreLibrary {
       title: string;
       baseUrl: string;
       bookSource: BookSource;
+      device?: DeviceTag | null;
     },
     param: Pagination,
   ): Promise<Feed> {
@@ -172,7 +191,7 @@ export class CalibreLibrary {
       );
     }
 
-    const books = await options.bookSource.getBooks(param.page);
+    const books = await options.bookSource.getBooks(param.page, options.device);
 
     if (books.length > PAGE_SIZE) {
       feed.addLink(
@@ -189,7 +208,11 @@ export class CalibreLibrary {
     return feed;
   }
 
-  async getAuthorBooksFeed(id: number, param: Pagination): Promise<Feed> {
+  async getAuthorBooksFeed(
+    id: number,
+    param: Pagination,
+    device?: DeviceTag | null,
+  ): Promise<Feed> {
     const author = await Author.fromId(id);
 
     return this.getBooksAcquisitionFeed(
@@ -198,6 +221,7 @@ export class CalibreLibrary {
         title: `Calibre Library - Authors - ${author.title}`,
         baseUrl: `/opds/authors/${id}`,
         bookSource: author,
+        device,
       },
       param,
     );
@@ -207,7 +231,11 @@ export class CalibreLibrary {
     return this.getCatalogFeed(Series, param);
   }
 
-  async getSeriesBooksFeed(id: number, param: Pagination): Promise<Feed> {
+  async getSeriesBooksFeed(
+    id: number,
+    param: Pagination,
+    device?: DeviceTag | null,
+  ): Promise<Feed> {
     const series = await Series.fromId(id);
 
     return this.getBooksAcquisitionFeed(
@@ -216,6 +244,7 @@ export class CalibreLibrary {
         title: series.name,
         baseUrl: `/opds/series/${id}`,
         bookSource: series,
+        device,
       },
       param,
     );
@@ -225,7 +254,11 @@ export class CalibreLibrary {
     return this.getCatalogFeed(Tag, param);
   }
 
-  async getTagBooksFeed(id: number, param: Pagination): Promise<Feed> {
+  async getTagBooksFeed(
+    id: number,
+    param: Pagination,
+    device?: DeviceTag | null,
+  ): Promise<Feed> {
     const tag = await Tag.fromId(id);
 
     return this.getBooksAcquisitionFeed(
@@ -234,42 +267,75 @@ export class CalibreLibrary {
         title: `Calibre Library - Tags - ${tag.title}`,
         baseUrl: `/opds/tags/${id}`,
         bookSource: tag,
+        device,
       },
       param,
     );
   }
 
-  async getBooksFeed(param: Pagination): Promise<Feed> {
+  async getLanguageListFeed(param: Pagination): Promise<Feed> {
+    return this.getCatalogFeed(Language, param);
+  }
+
+  async getLanguageBooksFeed(
+    id: number,
+    param: Pagination,
+    device?: DeviceTag | null,
+  ): Promise<Feed> {
+    const language = await Language.fromId(id);
+
+    return this.getBooksAcquisitionFeed(
+      {
+        id: `urn:calibre:catalogs:languages:${id}`,
+        title: `Calibre Library - Languages - ${language.title}`,
+        baseUrl: `/opds/languages/${id}`,
+        bookSource: language,
+        device,
+      },
+      param,
+    );
+  }
+  async getBooksFeed(param: Pagination, device?: DeviceTag | null): Promise<Feed> {
     return this.getBooksAcquisitionFeed(
       {
         id: `urn:calibre:catalogs:books`,
         title: "Calibre Library - Books",
         baseUrl: `/opds/books`,
         bookSource: new AllBooks(),
+        device,
       },
       param,
     );
   }
 
-  async getSearchBooksFeed(query: string, param: Pagination): Promise<Feed> {
+  async getSearchBooksFeed(
+    query: string,
+    param: Pagination,
+    device?: DeviceTag | null,
+  ): Promise<Feed> {
     return this.getBooksAcquisitionFeed(
       {
         id: `urn:calibre:catalogs:books`,
         title: `Calibre Library - Search - ${query}`,
         baseUrl: `/opds/search?q=${query}`,
         bookSource: new SearchBooks(query),
+        device,
       },
       param,
     );
   }
 
-  async getNewestBooksFeed(param: Pagination): Promise<Feed> {
+  async getNewestBooksFeed(
+    param: Pagination,
+    device?: DeviceTag | null,
+  ): Promise<Feed> {
     return this.getBooksAcquisitionFeed(
       {
         id: "urn:calibre:catalogs:newest",
         title: "Calibre Library - Newest",
         baseUrl: "/opds/newest",
         bookSource: new NewestBooks(),
+        device,
       },
       param,
     );
