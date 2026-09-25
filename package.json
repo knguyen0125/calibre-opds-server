@@ -12,9 +12,9 @@
   },
   "dependencies": {
     "elysia": "^1.4.30",
+    "jimp": "^1.6.1",
     "jszip": "^3.10.1",
-    "linkedom": "^0.18.12",
-    "sharp": "^0.34.4"
+    "linkedom": "^0.18.12"
   },
   "scripts": {
     "dev": "bun --watch index.ts",

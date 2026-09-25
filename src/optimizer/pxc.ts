@@ -6,12 +6,12 @@
  * sidecar under META-INF/crossink/pxc/. The firmware renders those
  * pixels directly and skips on-device JPEG decode and dithering.
  */
-import sharp from "sharp";
+import { Jimp } from "jimp";
 import type JSZip from "jszip";
+import { flattenToWhite, type JimpImage } from "./images.ts";
 import { parseHtml, type DomElement } from "./dom.ts";
 import { decodeHref, resolvePath, safeReadText } from "./text.ts";
 import type { Zip } from "./opf.ts";
-
 export const CROSSINK_OPTIMIZER_MANIFEST_PATH =
   "META-INF/crossink/optimizer-v1.json";
 export const CROSSINK_OPTIMIZER_INDEX_PATH =
@@ -278,23 +278,20 @@ function crossInkPxcPathKey(value: string): string {
 }
 
 /**
- * Rasterize an image at the exact display size, grayscale + Bayer 4x4
- * dither to 2bpp, and pack as PXC2. sharp replaces the browser canvas;
- * the dither arithmetic is the reference implementation verbatim.
+ * Rasterize a decoded image at the exact display size, grayscale +
+ * Bayer 4x4 dither to 2bpp, and pack as PXC2. The dither arithmetic is
+ * the reference implementation verbatim; Jimp bitmaps are RGBA.
  */
 export async function buildCrossInkPxc(
-  data: Uint8Array,
+  image: JimpImage,
   width: number,
   height: number,
 ): Promise<Uint8Array> {
-  const { data: pixels, info } = await sharp(Buffer.from(data))
-    .rotate()
-    .resize(width, height, { fit: "fill" })
-    .flatten({ background: { r: 255, g: 255, b: 255 } })
-    .raw()
-    .toBuffer({ resolveWithObject: true });
-
-  const channels = info.channels;
+  if (image.width !== width || image.height !== height) {
+    image.resize({ w: width, h: height });
+  }
+  flattenToWhite(image);
+  const pixels = image.bitmap.data;
   const rowBytes = Math.ceil(width / 4);
   const output = new Uint8Array(4 + rowBytes * height);
   const view = new DataView(output.buffer);
@@ -305,7 +302,7 @@ export async function buildCrossInkPxc(
     let packed = 0;
     let shift = 6;
     for (let x = 0; x < width; x++) {
-      const index = (y * width + x) * channels;
+      const index = (y * width + x) * 4;
       const grayBase = Math.round(
         pixels[index]! * 0.299 +
           pixels[index + 1]! * 0.587 +
@@ -350,6 +347,7 @@ export async function buildCrossInkPxcSidecars(
   xhtmlFiles: Record<string, string>,
   profileWidth: number,
   profileHeight: number,
+  onProgress?: (done: number) => void,
 ): Promise<OptimizerIndexEntry[]> {
   const cssRules = new Map<string, CssRule[]>();
   for (const [path, fileObj] of Object.entries(zip.files)) {
@@ -380,13 +378,13 @@ export async function buildCrossInkPxcSidecars(
       if (!imageFile || imageFile.dir) continue;
       try {
         const data = new Uint8Array(await imageFile.async("arraybuffer"));
-        const meta = await sharp(Buffer.from(data)).rotate().metadata();
-        const sourceWidth = meta.width ?? 0;
-        const sourceHeight = meta.height ?? 0;
-        if (!sourceWidth || !sourceHeight) continue;
+        const decoded = (await Jimp.read(
+          Buffer.from(data),
+        )) as unknown as JimpImage;
+        if (!decoded.width || !decoded.height) continue;
         const size = crossInkPxcSize(
-          sourceWidth,
-          sourceHeight,
+          decoded.width,
+          decoded.height,
           crossInkPxcStyle(rules, image),
           viewportWidth,
           viewportHeight,
@@ -401,7 +399,7 @@ export async function buildCrossInkPxcSidecars(
         const key = `${href}:${size.width}x${size.height}`;
         if (seen.has(key)) continue;
         const pxcPath = `${CROSSINK_PXC_DIR}/${crossInkPxcPathKey(key)}.pxc2`;
-        const payload = await buildCrossInkPxc(data, size.width, size.height);
+        const payload = await buildCrossInkPxc(decoded, size.width, size.height);
         out.file(pxcPath, payload, { compression: "STORE", createFolders: false });
         seen.add(key);
         entries.push({
@@ -416,6 +414,7 @@ export async function buildCrossInkPxcSidecars(
             payload.byteLength,
           ).getUint32(24, true),
         });
+        onProgress?.(entries.length);
       } catch {
         // Sidecars are optional; keep the source EPUB image when it
         // cannot be decoded.

@@ -5,7 +5,7 @@ import * as Path from "node:path";
 import * as OS from "node:os";
 import type { App } from "../index.ts";
 import JSZip from "jszip";
-import sharp from "sharp";
+import { Jimp } from "jimp";
 
 /**
  * End-to-end tests over a fixture calibre library: device-tagged feeds
@@ -35,12 +35,11 @@ async function buildFixtureEpub(): Promise<Uint8Array> {
   );
 
   // Landscape image larger than the X4 viewport in both dimensions.
-  const bigPng = await sharp({
-    create: { width: 1200, height: 900, channels: 3, background: "#668" },
-  })
-    .jpeg({ quality: 90 })
-    .toBuffer();
-  const bigPngBytes = await sharp(bigPng).png().toBuffer();
+  const bigPngBytes = await new Jimp({
+    width: 1200,
+    height: 900,
+    color: 0x66668888,
+  }).getBuffer("image/png");
   zip.file("OEBPS/images/spread.png", bigPngBytes);
 
   const paragraphs = Array.from(
@@ -130,7 +129,7 @@ beforeAll(async () => {
   process.env.CALIBRE_LIBRARY_DIR = libraryDir;
   process.env.CALIBRE_USERNAME = "kien";
   process.env.CALIBRE_PASSWORD = "secret";
-  process.env.PORT = "0";
+  process.env.OPTIMIZER_CACHE_DIR = Path.join(libraryDir, "cache");
 
   const { initDb } = await import("../src/db.ts");
   initDb(Path.join(libraryDir, "metadata.db"));
@@ -159,13 +158,13 @@ describe("auth", () => {
 });
 
 describe("device-aware feed", () => {
-  test("X4 entries carry crafted titles, no author, single epub link", async () => {
+  test("X4 entries carry crafted titles, author, single epub link", async () => {
     const res = await get("/opds/newest", basicAuth("kien#X4"));
     expect(res.status).toBe(200);
     const xml = await res.text();
 
     expect(xml).toContain("<title>Mistborn - 02 - The Well of Ascension</title>");
-    expect(xml).not.toContain("<author>");
+    expect(xml).toContain("<name>Brandon Sanderson</name>");
     expect(xml).not.toContain("<content");
     expect(xml.match(/rel="http:\/\/opds-spec\.org\/acquisition"/g)?.length).toBe(1);
     expect(xml).toContain('href="/get/books/1/formats/epub"');
@@ -230,9 +229,10 @@ describe("languages feed", () => {
     const xml = await res.text();
     expect(xml).toContain("Calibre Library - Languages - English");
     expect(xml).toContain("<title>Mistborn - 02 - The Well of Ascension</title>");
-    expect(xml).not.toContain("<author>");
+    expect(xml).toContain("<name>Brandon Sanderson</name>");
   });
 });
+
 
 describe("alphabet feeds", () => {
   test("authors root is a letter index, diacritics folded", async () => {
@@ -267,7 +267,7 @@ describe("alphabet feeds", () => {
     const xml = await res.text();
     expect(xml).toContain("Calibre Library - Books - W");
     expect(xml).toContain("<title>Mistborn - 02 - The Well of Ascension</title>");
-    expect(xml).not.toContain("<author>");
+    expect(xml).toContain("<name>Brandon Sanderson</name>");
   });
 
   test("symbol bucket groups $ and digits together", async () => {
@@ -331,10 +331,9 @@ describe("optimizing download", () => {
     expect(zip.file("OEBPS/images/spread.jpg")).toBeDefined();
     expect(zip.file("OEBPS/images/spread.png")).toBeNull();
     const jpg = await zip.file("OEBPS/images/spread.jpg")!.async("nodebuffer");
-    const meta = await sharp(jpg).metadata();
-    expect(meta.width).toBeLessThanOrEqual(480);
-    expect(meta.height).toBeLessThanOrEqual(800);
-    expect(meta.format).toBe("jpeg");
+    const decoded = await Jimp.read(jpg);
+    expect(decoded.width).toBeLessThanOrEqual(480);
+    expect(decoded.height).toBeLessThanOrEqual(800);
 
     // Long section was split and registered
     const splitFiles = Object.keys(zip.files).filter((p) =>
@@ -358,5 +357,34 @@ describe("optimizing download", () => {
     expect(res.headers.get("content-disposition")).toContain(
       "The Well of Ascension - Brandon Sanderson.epub",
     );
+  });
+});
+
+describe("optimizer cache", () => {
+  test("second X4 download is served from cache, byte-identical", async () => {
+    const first = await get("/get/books/1/formats/epub", basicAuth("kien#X4"));
+    const firstBytes = new Uint8Array(await first.arrayBuffer());
+    const cacheFiles = FS.readdirSync(process.env.OPTIMIZER_CACHE_DIR!);
+    expect(cacheFiles.length).toBe(1);
+    expect(cacheFiles[0]!.startsWith("1-X4-")).toBe(true);
+
+    const second = await get("/get/books/1/formats/epub", basicAuth("kien#X4"));
+    const secondBytes = new Uint8Array(await second.arrayBuffer());
+    expect(Buffer.from(secondBytes).equals(Buffer.from(firstBytes))).toBe(true);
+    // Still exactly one cache entry; the hit must not have re-generated
+    expect(FS.readdirSync(process.env.OPTIMIZER_CACHE_DIR!).length).toBe(1);
+  });
+
+  test("editing the source epub invalidates the cache key", async () => {
+    const epubPath = Path.join(bookDir, "The Well of Ascension.epub");
+    const original = await Bun.file(epubPath).arrayBuffer();
+    const patched = new Uint8Array(original.byteLength + 1);
+    patched.set(new Uint8Array(original), 0);
+    await Bun.write(epubPath, patched);
+
+    const res = await get("/get/books/1/formats/epub", basicAuth("kien#X4"));
+    expect(res.status).toBe(200);
+    const files = FS.readdirSync(process.env.OPTIMIZER_CACHE_DIR!);
+    expect(files.length).toBe(2);
   });
 });

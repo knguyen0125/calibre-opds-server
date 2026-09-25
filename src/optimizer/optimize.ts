@@ -54,6 +54,10 @@ import {
   X_LOCATION_MANIFEST_PATH,
 } from "./xlocation.ts";
 
+/** Bump when the pipeline changes in a way that alters output bytes;
+ * cache keys include it so stale results are never served. */
+export const OPTIMIZER_VERSION = 1;
+
 export const GENERATOR = "calibre-opds-server";
 
 const DEFENSIVE_STYLE =
@@ -71,17 +75,24 @@ const FONT_OBFUSCATION_ALGORITHMS = new Set([
   "http://www.idpf.org/2008/embedding",
   "http://ns.adobe.com/pdf/enc#RC",
 ]);
-
 export type OptimizeStats = {
   device: DeviceTag;
   originalBytes: number;
   optimizedBytes: number;
   images: number;
+  imagesTotal: number;
   imageErrors: number;
   fixes: number;
   splitSections: number;
   splitParts: number;
   pxcEntries: number;
+  elapsedMs: number;
+};
+
+export type OptimizeProgress = {
+  phase: "images" | "pxc";
+  done: number;
+  total: number;
   elapsedMs: number;
 };
 
@@ -108,6 +119,7 @@ async function assertEpubHasNoContentEncryption(zip: Zip): Promise<void> {
 export async function optimizeEpub(
   input: Uint8Array,
   device: DeviceTag,
+  onProgress?: (progress: OptimizeProgress) => void,
 ): Promise<{ data: Uint8Array; stats: OptimizeStats }> {
   const startTime = Date.now();
   const profile = DEVICE_PROFILES[device];
@@ -116,6 +128,7 @@ export async function optimizeEpub(
     originalBytes: input.byteLength,
     optimizedBytes: 0,
     images: 0,
+    imagesTotal: 0,
     imageErrors: 0,
     fixes: 0,
     splitSections: 0,
@@ -153,6 +166,13 @@ export async function optimizeEpub(
   }
 
   // First pass: images
+  const imagesTotal = entries.filter(
+    ([p, f]) =>
+      !f.dir &&
+      p !== "mimetype" &&
+      p.toLowerCase().match(/\.(png|gif|webp|bmp|jpg|jpeg|svg)$/),
+  ).length;
+  stats.imagesTotal = imagesTotal;
   for (const [path, fileObj] of entries) {
     if (fileObj.dir || path === "mimetype") continue;
     const low = path.toLowerCase();
@@ -170,6 +190,12 @@ export async function optimizeEpub(
         delete renamed[path];
         out.file(path, data, STORE_OPTS);
       }
+      onProgress?.({
+        phase: "images",
+        done: stats.images + stats.imageErrors,
+        total: imagesTotal,
+        elapsedMs: Date.now() - startTime,
+      });
     } else if (low.match(/\.(xhtml|html|htm)$/)) {
       xhtmlFiles[path] = await safeReadText(fileObj);
     } else if (low.endsWith(".opf")) {
@@ -389,6 +415,13 @@ export async function optimizeEpub(
     processedXhtmlFiles,
     profile.width,
     profile.height,
+    (done) =>
+      onProgress?.({
+        phase: "pxc",
+        done,
+        total: imagesTotal,
+        elapsedMs: Date.now() - startTime,
+      }),
   );
   stats.pxcEntries = pxcEntries.length;
   if (optimizedOpfContent) {

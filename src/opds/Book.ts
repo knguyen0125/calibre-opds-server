@@ -140,9 +140,14 @@ export class Book extends Entry {
     );
 
     if (device) {
-      // The X4 builds its download filename from the entry title alone,
-      // so author is omitted and only the EPUB acquisition link is
-      // emitted; covers and summaries are ignored by its parser.
+      // The X4 composes its download filename from title + author
+      // (format set per server on the device: "Title - Author" or
+      // "Author - Title"), so the author rides along for browsing and
+      // the saved filename gains it; covers and summaries are ignored
+      // by its parser either way.
+      if (authorNames.length > 0) {
+        entry.addAuthor(authorNames.join(" & "));
+      }
       const epub = bookFormats.find((f) => f.format === "epub");
       if (epub) {
         entry.addLink(

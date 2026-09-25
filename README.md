@@ -54,10 +54,12 @@ single "#" bucket. Book buckets use calibre's title sort.
 ## What the device feed does
 
 When a request carries a device tag, book entries are shaped for the
-CrossInk OPDS client: the entry title becomes the filename the device
-saves (`<Series> - <NN> - <Title>.epub`, zero-padded index, plain
-`<Title>.epub` without a series), the author is omitted so the title is
-used verbatim, and only the EPUB acquisition link is emitted. Feeds are
+CrossInk OPDS client: the entry title carries the filename base
+(`<Series> - <NN> - <Title>.epub`, zero-padded index, plain
+`<Title>.epub` without a series) and the author rides along, so the
+device shows it while browsing and appends it to the saved filename per
+its per-server format setting ("Title - Author" or
+"Author - Title"). Only the EPUB acquisition link is emitted. Feeds are
 paginated at 20 entries, well under the reader's 50-entry parse cap.
 
 ## EPUB optimization
@@ -67,7 +69,9 @@ when the username carries a device tag. The port follows CrossInk's web
 uploader (web/pages/files.js):
 
 - images: flattened, capped to the device viewport, grayscaled,
-  re-encoded as baseline JPEG q85 (mozjpeg)
+  re-encoded as baseline JPEG q85 (Jimp, pure JS — PNG/JPEG/BMP/TIFF/
+  GIF decode; WebP and SVG stay as-is and the reader shows a
+  placeholder for them; EXIF orientation is not applied)
 - repairs: invisible blank codepoints scrubbed, SVG-wrapped
   covers/images unwrapped, OPF cover meta and NCX identifier fixed,
   defensive CSS injected into every chapter
@@ -79,8 +83,22 @@ uploader (web/pages/files.js):
   directly, skipping on-device JPEG decode
 
 Optimization failure (including DRM-protected files) falls back to the
-original file, mirroring the CrossInk uploader. Nothing is cached;
-concurrent downloads of the same book share one optimization run.
+original file, mirroring the CrossInk uploader.
+
+Results are cached on disk (atomic writes, keyed by book + device +
+source size/mtime + optimizer version, so calibre edits invalidate).
+Image-heavy books can take tens of seconds to build on the first
+download — if the reader gives up mid-download, the finished file is
+already cached and the retry is instant. The cache is swept oldest-first
+whenever it exceeds `OPTIMIZER_CACHE_MAX_BYTES` (default 2 GiB).
+
+- `OPTIMIZER_CACHE_DIR` — cache location (default `optimizer-cache/`
+  under the working directory)
+- `OPTIMIZER_CACHE_MAX_BYTES` — eviction threshold in bytes
+
+Note: image-heavy books grow (a 26 MB manga became 37 MB) because PXC2
+sidecars duplicate every image at 2bpp alongside the JPEG fallback;
+that size is the price of skipping on-device decode.
 
 Plain-username requests get the untouched calibre file with a
 `Content-Disposition` filename (`Title - Author.epub`). Feed XML is
